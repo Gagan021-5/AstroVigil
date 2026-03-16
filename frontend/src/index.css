@@ -1,3 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&family=Syne:wght@500;600;700&display=swap');
+
+@import "tailwindcss";
+
 /* ─── CSS Reset & Global Tokens ─────────────────────────────────── */
 *, *::before, *::after {
   margin: 0;
@@ -6,47 +10,55 @@
 }
 
 :root {
-  /* Dark space theme */
-  --bg-primary: #0a0e1a;
-  --bg-secondary: #111827;
-  --bg-panel: rgba(17, 24, 39, 0.85);
-  --bg-glass: rgba(17, 24, 39, 0.60);
+  /* Ultra-modern clean dark theme */
+  --bg-primary: #000000;
+  --bg-secondary: #0a0a0a;
+  --bg-panel: rgba(10, 10, 10, 0.75);
+  --bg-glass: rgba(15, 15, 15, 0.45);
 
-  --border-color: rgba(99, 179, 237, 0.15);
-  --border-glow: rgba(99, 179, 237, 0.35);
+  --border-color: rgba(255, 255, 255, 0.1);
+  --border-glow: rgba(255, 255, 255, 0.2);
 
-  --text-primary: #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-primary: #ededed;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
 
-  --accent-blue: #63b3ed;
-  --accent-cyan: #22d3ee;
-  --accent-purple: #a78bfa;
-  --accent-green: #34d399;
-  --accent-yellow: #fbbf24;
-  --accent-orange: #fb923c;
-  --accent-red: #f87171;
+  --accent-cyan: #06b6d4;
+  --accent-cyan-glow: #22d3ee;
+  --accent-purple: #8b5cf6;
+  --accent-purple-glow: #a78bfa;
+  --accent-blue: #3b82f6;
+  --accent-blue-glow: #60a5fa;
 
-  --gradient-header: linear-gradient(135deg, #63b3ed 0%, #a78bfa 100%);
+  --gradient-neon: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%);
+  --gradient-glass: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 100%);
 
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-mono: 'Space Mono', 'JetBrains Mono', 'Fira Code', monospace;
+  --font-display: 'Syne', sans-serif;
 
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
 
-  --shadow-glow: 0 0 20px rgba(99, 179, 237, 0.1),
-                 0 0 60px rgba(99, 179, 237, 0.05);
+  --shadow-neon: 0 0 15px rgba(255, 255, 255, 0.05),
+                 0 0 45px rgba(255, 255, 255, 0.02);
+  --shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.6);
+  --glass-blur: blur(20px);
 }
 
 html, body {
   height: 100%;
   font-family: var(--font-sans);
-  background: var(--bg-primary);
+  background-color: var(--bg-primary);
+  /* Very subtle, elegant gradient accents */
+  background-image: 
+    radial-gradient(circle at 15% 50%, rgba(6, 182, 212, 0.03) 0%, transparent 40%),
+    radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.03) 0%, transparent 40%);
   color: var(--text-primary);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
@@ -62,9 +74,35 @@ html, body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-color);
+  background: var(--text-muted);
   border-radius: 3px;
+  transition: background 0.3s ease;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--border-glow);
+  background: var(--text-secondary);
+}
+
+/* Shared Premium Utility Classes */
+.glass-panel {
+  background: var(--bg-panel);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-glass);
+}
+
+.text-gradient {
+  background: var(--gradient-neon);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.glow-fx {
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.glow-fx:hover {
+  box-shadow: var(--shadow-neon);
+  border-color: rgba(255, 255, 255, 0.25);
 }

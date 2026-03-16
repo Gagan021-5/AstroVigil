@@ -32,11 +32,11 @@ function GroundTrackMap({ satellites, debrisCompressed, epoch, selectedSatId, on
     const H = rect.height;
 
     // ── Background ──
-    ctx.fillStyle = '#0d1117';
+    ctx.fillStyle = '#050505';
     ctx.fillRect(0, 0, W, H);
 
     // ── Grid lines ──
-    ctx.strokeStyle = 'rgba(99, 179, 237, 0.06)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
     ctx.lineWidth = 1;
     for (let lon = -180; lon <= 180; lon += 30) {
       const [x] = latLonToXY(0, lon, W, H);
@@ -48,20 +48,20 @@ function GroundTrackMap({ satellites, debrisCompressed, epoch, selectedSatId, on
     }
 
     // ── Equator ──
-    ctx.strokeStyle = 'rgba(99, 179, 237, 0.12)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
     ctx.lineWidth = 1;
     const [, eqY] = latLonToXY(0, 0, W, H);
     ctx.beginPath(); ctx.moveTo(0, eqY); ctx.lineTo(W, eqY); ctx.stroke();
 
-    // ── Coastline approximation (simplified continental outlines) ──
+    // ── Coastline approximation ──
     drawCoastlines(ctx, W, H, latLonToXY);
 
     // ── Terminator Line (day/night shadow) ──
     drawTerminator(ctx, W, H, epoch, latLonToXY);
 
-    // ── Debris cloud (batch render for performance) ──
+    // ── Debris cloud ──
     if (debrisCompressed && debrisCompressed.length > 0) {
-      ctx.fillStyle = 'rgba(251, 146, 60, 0.25)';
+      ctx.fillStyle = 'rgba(251, 146, 60, 0.2)'; // Muted orange for debris
       for (let i = 0; i < debrisCompressed.length; i += 4) {
         const lat = debrisCompressed[i + 1];
         const lon = debrisCompressed[i + 2];
@@ -75,30 +75,29 @@ function GroundTrackMap({ satellites, debrisCompressed, epoch, selectedSatId, on
       satellites.forEach(sat => {
         const isSelected = sat.id === selectedSatId;
 
-        // Historical trail (fading)
+        // Historical trail 
         if (sat.trail && sat.trail.length > 1) {
           ctx.lineWidth = 1;
           for (let i = 1; i < sat.trail.length; i++) {
-            const alpha = (i / sat.trail.length) * 0.6;
+            const alpha = (i / sat.trail.length) * (isSelected ? 0.6 : 0.2);
             ctx.strokeStyle = isSelected
-              ? `rgba(34, 211, 238, ${alpha})`
-              : `rgba(99, 179, 237, ${alpha})`;
+              ? `rgba(255, 255, 255, ${alpha})`
+              : `rgba(161, 161, 170, ${alpha})`;
             const [x1, y1] = latLonToXY(sat.trail[i - 1][0], sat.trail[i - 1][1], W, H);
             const [x2, y2] = latLonToXY(sat.trail[i][0], sat.trail[i][1], W, H);
-            // Avoid wrapping lines
             if (Math.abs(x2 - x1) < W * 0.5) {
               ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
             }
           }
         }
 
-        // Predicted trajectory (dashed)
+        // Predicted trajectory
         if (sat.predicted && sat.predicted.length > 1) {
-          ctx.setLineDash([4, 4]);
+          ctx.setLineDash([3, 4]);
           ctx.lineWidth = 1;
           ctx.strokeStyle = isSelected
-            ? 'rgba(167, 139, 250, 0.5)'
-            : 'rgba(167, 139, 250, 0.25)';
+            ? 'rgba(255, 255, 255, 0.4)'
+            : 'rgba(161, 161, 170, 0.15)';
           ctx.beginPath();
           let moved = false;
           for (let i = 0; i < sat.predicted.length; i++) {
@@ -122,32 +121,35 @@ function GroundTrackMap({ satellites, debrisCompressed, epoch, selectedSatId, on
         const [sx, sy] = latLonToXY(sat.lat, sat.lon, W, H);
 
         if (isSelected) {
-          // Glow ring
           ctx.beginPath();
-          ctx.arc(sx, sy, 10, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(34, 211, 238, 0.12)';
+          ctx.arc(sx, sy, 12, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
           ctx.fill();
-          ctx.strokeStyle = 'rgba(34, 211, 238, 0.5)';
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
           ctx.lineWidth = 1;
           ctx.stroke();
+          
+          ctx.beginPath();
+          ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+        } else {
+          ctx.beginPath();
+          ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#a1a1aa';
+          ctx.fill();
         }
 
-        // Dot
-        ctx.beginPath();
-        ctx.arc(sx, sy, isSelected ? 4 : 3, 0, Math.PI * 2);
-        ctx.fillStyle = isSelected ? '#22d3ee' : '#63b3ed';
-        ctx.fill();
-
         // Label
-        ctx.fillStyle = isSelected ? '#22d3ee' : 'rgba(226, 232, 240, 0.7)';
-        ctx.font = `${isSelected ? '11' : '9'}px Inter, sans-serif`;
+        ctx.fillStyle = isSelected ? '#ffffff' : 'rgba(161, 161, 170, 0.6)';
+        ctx.font = `${isSelected ? '10' : '9'}px DM Mono, monospace`;
         ctx.fillText(`S${sat.id}`, sx + 6, sy - 4);
       });
     }
 
     // ── Axis labels ──
-    ctx.fillStyle = 'rgba(148, 163, 184, 0.4)';
-    ctx.font = '9px Inter, sans-serif';
+    ctx.fillStyle = 'rgba(161, 161, 170, 0.4)';
+    ctx.font = '9px DM Mono, monospace';
     for (let lon = -150; lon <= 150; lon += 60) {
       const [lx] = latLonToXY(0, lon, W, H);
       ctx.fillText(`${lon}°`, lx + 2, H - 3);
@@ -188,31 +190,24 @@ function GroundTrackMap({ satellites, debrisCompressed, epoch, selectedSatId, on
   return (
     <canvas
       ref={canvasRef}
-      className="ground-track-canvas"
+      className="block w-full h-full cursor-crosshair"
       onClick={handleClick}
     />
   );
 }
 
-/** Simplified continental outlines for the map background */
 function drawCoastlines(ctx, W, H, latLonToXY) {
   const continents = [
-    // North America (simplified)
     [[ 70,-168],[ 70,-60],[ 50,-55],[ 42,-67],[ 25,-80],[ 15,-85],[ 15,-90],[ 18,-105],[ 32,-117],[ 48,-124],[ 60,-140],[ 70,-168]],
-    // South America
     [[ 12,-70],[ 5,-77],[ -5,-80],[ -5,-35],[ -15,-40],[ -23,-42],[ -35,-55],[ -55,-69],[ -50,-75],[ -42,-73],[ -17,-72],[ -5,-80]],
-    // Europe
     [[ 36,-10],[ 38,0],[ 43,5],[ 46,1],[ 48,3],[ 52,5],[ 54,10],[ 57,10],[ 65,14],[ 71,28],[ 70,40],[ 55,28],[ 45,30],[ 42,28],[ 36,28],[ 36,-10]],
-    // Africa
     [[ 35,-5],[ 37,10],[ 32,32],[ 12,44],[ 0,42],[ -12,40],[ -26,33],[ -35,20],[ -35,18],[ -20,12],[ -6,12],[ 5,0],[ 6,-3],[ 15,-17],[ 35,-5]],
-    // Asia (very simplified)
     [[ 42,28],[ 45,30],[ 55,28],[ 70,40],[ 72,60],[ 73,80],[ 72,100],[ 65,110],[ 62,130],[ 65,170],[ 55,162],[ 45,140],[ 35,130],[ 22,108],[ 8,77],[ 25,55],[ 32,48],[ 32,32],[ 38,44],[ 42,28]],
-    // Australia
     [[-12,130],[-15,140],[-25,153],[-35,150],[-38,145],[-35,137],[-22,114],[-12,130]],
   ];
 
-  ctx.strokeStyle = 'rgba(99, 179, 237, 0.12)';
-  ctx.fillStyle = 'rgba(99, 179, 237, 0.04)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
   ctx.lineWidth = 0.8;
 
   continents.forEach(points => {
@@ -228,19 +223,15 @@ function drawCoastlines(ctx, W, H, latLonToXY) {
   });
 }
 
-/** Terminator line — day/night boundary based on simplified solar position */
 function drawTerminator(ctx, W, H, epoch, latLonToXY) {
-  // Approximate subsolar point
   const dayOfYear = ((epoch || 0) / 86400) % 365.25;
   const declination = -23.44 * Math.cos(((dayOfYear + 10) / 365.25) * 2 * Math.PI);
   const hourAngle = ((epoch || 0) % 86400) / 86400 * 360 - 180;
 
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
   ctx.beginPath();
 
-  // Draw the night-side polygon
   const steps = 100;
-  // Top edge
   for (let i = 0; i <= steps; i++) {
     const lon = -180 + (360 * i / steps);
     const lonRad = (lon - hourAngle) * Math.PI / 180;
@@ -251,7 +242,6 @@ function drawTerminator(ctx, W, H, epoch, latLonToXY) {
     else ctx.lineTo(x, y);
   }
 
-  // Close along bottom or top based on declination sign
   if (declination >= 0) {
     ctx.lineTo(W, H);
     ctx.lineTo(0, H);

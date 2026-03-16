@@ -1,5 +1,2 @@
-.bullseye-canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
+/* canvas fills its Tailwind parent */
+canvas { display: block; width: 100%; height: 100%; }

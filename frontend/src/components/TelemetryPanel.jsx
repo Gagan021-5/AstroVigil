@@ -24,7 +24,8 @@ function TelemetryPanel({ satellites, totalFuelConsumed, totalCollisionsAvoided 
     const H = rect.height;
     const maxFuel = 100; // WET_MASS - DRY_MASS = 100 kg
 
-    ctx.fillStyle = '#0d1117';
+    // ── Background ──
+    ctx.fillStyle = '#050505';
     ctx.fillRect(0, 0, W, H);
 
     if (!satellites || satellites.length === 0) return;
@@ -37,7 +38,7 @@ function TelemetryPanel({ satellites, totalFuelConsumed, totalCollisionsAvoided 
     // ═══════════════════════════════════════════════════════════
     // LEFT: Fuel Gauge Bars (scrollable list)
     // ═══════════════════════════════════════════════════════════
-    ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
+    ctx.fillStyle = 'rgba(161, 161, 170, 0.6)';
     ctx.font = '10px Inter, sans-serif';
     ctx.fillText('Fuel Reserves (kg)', padX, padY + 12);
 
@@ -52,24 +53,24 @@ function TelemetryPanel({ satellites, totalFuelConsumed, totalCollisionsAvoided 
       const fuelPct = Math.max(0, sat.fuel_remaining_kg / maxFuel);
 
       // Label
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
-      ctx.font = '8px JetBrains Mono, monospace';
+      ctx.fillStyle = 'rgba(161, 161, 170, 0.6)';
+      ctx.font = '9px DM Mono, monospace';
       ctx.textAlign = 'right';
       ctx.fillText(`S${sat.id}`, padX + 20, y + barH - 1);
       ctx.textAlign = 'left';
 
       // Background bar
       const bx = padX + 26;
-      ctx.fillStyle = 'rgba(99, 179, 237, 0.06)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
       ctx.beginPath();
       ctx.roundRect(bx, y, barMaxW, barH, 3);
       ctx.fill();
 
-      // Fuel bar with gradient
+      // Fuel bar with gradient (using elegant colors)
       let barColor;
-      if (fuelPct > 0.5) barColor = '#34d399';
-      else if (fuelPct > 0.2) barColor = '#fbbf24';
-      else barColor = '#f87171';
+      if (fuelPct > 0.5) barColor = '#10b981'; // Emerald
+      else if (fuelPct > 0.2) barColor = '#d97706'; // Amber
+      else barColor = '#e11d48'; // Rose
 
       const grad = ctx.createLinearGradient(bx, 0, bx + barMaxW * fuelPct, 0);
       grad.addColorStop(0, barColor);
@@ -80,13 +81,13 @@ function TelemetryPanel({ satellites, totalFuelConsumed, totalCollisionsAvoided 
       ctx.fill();
 
       // Value
-      ctx.fillStyle = 'rgba(226, 232, 240, 0.5)';
-      ctx.font = '7px JetBrains Mono, monospace';
-      ctx.fillText(`${sat.fuel_remaining_kg.toFixed(1)}`, bx + barMaxW + 4, y + barH - 1);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.font = '8px DM Mono, monospace';
+      ctx.fillText(`${sat.fuel_remaining_kg.toFixed(1)}`, bx + barMaxW + 6, y + barH - 1);
     }
 
     if (satellites.length > maxBars) {
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.4)';
+      ctx.fillStyle = 'rgba(161, 161, 170, 0.4)';
       ctx.font = '9px Inter, sans-serif';
       ctx.fillText(`+${satellites.length - maxBars} more...`, padX, H - 6);
     }
@@ -96,24 +97,23 @@ function TelemetryPanel({ satellites, totalFuelConsumed, totalCollisionsAvoided 
     // ═══════════════════════════════════════════════════════════
     const cx = chartW + 10;
     const cw = gaugeW;
-    const ch = H - 40;
     const cy = padY;
 
     // Title
-    ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
+    ctx.fillStyle = 'rgba(161, 161, 170, 0.6)';
     ctx.font = '10px Inter, sans-serif';
     ctx.fillText('Fleet Efficiency', cx, cy + 12);
 
     // Stats boxes
     const stats = [
       { label: 'Total Fuel Used', value: `${totalFuelConsumed.toFixed(1)} kg`,
-        color: '#fb923c', icon: '⛽' },
+        color: '#d97706', icon: '⛽' },
       { label: 'Collisions Avoided', value: `${totalCollisionsAvoided}`,
-        color: '#34d399', icon: '🛡️' },
+        color: '#10b981', icon: '🛡️' },
       { label: 'Active Satellites', value: `${satellites.length}`,
-        color: '#63b3ed', icon: '🛰' },
+        color: '#ffffff', icon: '🛰' },
       { label: 'Avg Fuel Remaining', value: `${(satellites.reduce((a, s) => a + s.fuel_remaining_kg, 0) / satellites.length).toFixed(1)} kg`,
-        color: '#a78bfa', icon: '📊' },
+        color: '#71717a', icon: '📊' },
     ];
 
     const boxH = 36;
@@ -121,34 +121,34 @@ function TelemetryPanel({ satellites, totalFuelConsumed, totalCollisionsAvoided 
     stats.forEach((s, i) => {
       const by = cy + 24 + i * (boxH + boxGap);
       // Box background
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
       ctx.beginPath();
       ctx.roundRect(cx, by, cw, boxH, 6);
       ctx.fill();
-      ctx.strokeStyle = s.color + '30';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
       // Icon
-      ctx.font = '14px sans-serif';
-      ctx.fillText(s.icon, cx + 8, by + 24);
+      ctx.font = '12px sans-serif';
+      ctx.fillText(s.icon, cx + 8, by + 23);
 
       // Value
       ctx.fillStyle = s.color;
-      ctx.font = 'bold 14px JetBrains Mono, monospace';
-      ctx.fillText(s.value, cx + 28, by + 16);
+      ctx.font = '14px DM Mono, monospace';
+      ctx.fillText(s.value, cx + 30, by + 16);
 
       // Label
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
-      ctx.font = '8px Inter, sans-serif';
-      ctx.fillText(s.label, cx + 28, by + 28);
+      ctx.fillStyle = 'rgba(161, 161, 170, 0.5)';
+      ctx.font = '9px Inter, sans-serif';
+      ctx.fillText(s.label, cx + 30, by + 28);
     });
 
     // Fleet fuel histogram at bottom
-    const histY = cy + 24 + 4 * (boxH + boxGap) + 10;
+    const histY = cy + 24 + 4 * (boxH + boxGap) + 12;
     const histH = Math.max(30, H - histY - 10);
     if (histH > 20) {
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.4)';
+      ctx.fillStyle = 'rgba(161, 161, 170, 0.5)';
       ctx.font = '9px Inter, sans-serif';
       ctx.fillText('Fuel Distribution', cx, histY + 10);
 
@@ -161,7 +161,7 @@ function TelemetryPanel({ satellites, totalFuelConsumed, totalCollisionsAvoided 
       });
       const maxBucket = Math.max(...buckets, 1);
       const bucketW = (cw - 10) / 5;
-      const colors = ['#f87171', '#fb923c', '#fbbf24', '#34d399', '#22d3ee'];
+      const colors = ['#e11d48', '#d97706', '#d97706', '#10b981', '#10b981'];
 
       buckets.forEach((count, i) => {
         const bx = cx + i * bucketW + 2;
@@ -174,9 +174,9 @@ function TelemetryPanel({ satellites, totalFuelConsumed, totalCollisionsAvoided 
         // Count label
         if (count > 0) {
           ctx.fillStyle = colors[i];
-          ctx.font = '8px JetBrains Mono, monospace';
+          ctx.font = '9px DM Mono, monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(count.toString(), bx + (bucketW - 4) / 2, by2 - 2);
+          ctx.fillText(count.toString(), bx + (bucketW - 4) / 2, by2 - 4);
           ctx.textAlign = 'left';
         }
       });
@@ -190,7 +190,7 @@ function TelemetryPanel({ satellites, totalFuelConsumed, totalCollisionsAvoided 
     return () => cancelAnimationFrame(animRef.current);
   }, [draw]);
 
-  return <canvas ref={canvasRef} className="telemetry-canvas" />;
+  return <canvas ref={canvasRef} className="block w-full h-full" />;
 }
 
 export default TelemetryPanel;

@@ -29,14 +29,14 @@ function BullseyePlot({ conjunctions, selectedSatId }) {
     const maxR = Math.min(W, H) * 0.42;
 
     // ── Background ──
-    ctx.fillStyle = '#0d1117';
+    ctx.fillStyle = '#050505';
     ctx.fillRect(0, 0, W, H);
 
     // ── Concentric distance rings ──
     const rings = [
-      { r: 0.2, label: '1 km', color: 'rgba(248, 113, 113, 0.3)' },
-      { r: 0.6, label: '5 km', color: 'rgba(251, 191, 36, 0.2)' },
-      { r: 1.0, label: '5+ km', color: 'rgba(52, 211, 153, 0.12)' },
+      { r: 0.2, label: '1 km', color: 'rgba(225, 29, 72, 0.2)' }, // Rose
+      { r: 0.6, label: '5 km', color: 'rgba(217, 119, 6, 0.15)' }, // Amber
+      { r: 1.0, label: '5+ km', color: 'rgba(255, 255, 255, 0.08)' }, // Neutral white
     ];
 
     rings.forEach(ring => {
@@ -47,56 +47,53 @@ function BullseyePlot({ conjunctions, selectedSatId }) {
       ctx.lineWidth = 1;
       ctx.stroke();
 
-      ctx.fillStyle = ring.color.replace(/[\d.]+\)/, '0.06)');
+      ctx.fillStyle = ring.color.replace(/[\d.]+\)/, '0.03)');
       ctx.fill();
 
       // Label
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
-      ctx.font = '9px Inter, sans-serif';
+      ctx.fillStyle = 'rgba(161, 161, 170, 0.6)'; // zinc-400
+      ctx.font = '9px DM Mono, monospace';
       ctx.fillText(ring.label, cx + r + 4, cy - 4);
     });
 
     // ── Cross-hairs ──
-    ctx.strokeStyle = 'rgba(99, 179, 237, 0.1)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 0.5;
     ctx.beginPath(); ctx.moveTo(cx, cy - maxR); ctx.lineTo(cx, cy + maxR); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(cx - maxR, cy); ctx.lineTo(cx + maxR, cy); ctx.stroke();
 
     // ── Compass labels ──
-    ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
-    ctx.font = '10px Inter, sans-serif';
+    ctx.fillStyle = 'rgba(161, 161, 170, 0.5)';
+    ctx.font = '10px DM Mono, monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('0°', cx, cy - maxR - 6);
-    ctx.fillText('180°', cx, cy + maxR + 14);
+    ctx.fillText('0°', cx, cy - maxR - 8);
+    ctx.fillText('180°', cx, cy + maxR + 16);
     ctx.textAlign = 'left';
-    ctx.fillText('90°', cx + maxR + 6, cy + 4);
+    ctx.fillText('90°', cx + maxR + 8, cy + 4);
     ctx.textAlign = 'right';
-    ctx.fillText('270°', cx - maxR - 6, cy + 4);
+    ctx.fillText('270°', cx - maxR - 8, cy + 4);
     ctx.textAlign = 'left';
 
     // ── Center marker (selected satellite) ──
     ctx.beginPath();
     ctx.arc(cx, cy, 5, 0, Math.PI * 2);
-    ctx.fillStyle = '#22d3ee';
+    ctx.fillStyle = '#ffffff';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(34, 211, 238, 0.4)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 9, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.fillStyle = 'rgba(34, 211, 238, 0.8)';
-    ctx.font = '10px JetBrains Mono, monospace';
-    ctx.fillText(`SAT-${selectedSatId}`, cx + 12, cy - 10);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.font = '10px DM Mono, monospace';
+    ctx.fillText(`SAT-${selectedSatId}`, cx + 14, cy - 10);
 
     // ── Plot conjunction debris ──
     if (conjunctions && conjunctions.length > 0) {
-      // Filter for this satellite's conjunctions (or show all if backend already filtered)
       const conjs = conjunctions;
 
       conjs.forEach(c => {
-        // Map miss distance to radial position
-        // <1km → inner ring, <5km → mid ring, else → outer ring
         let rNorm;
         if (c.miss_distance_m < 1000) {
           rNorm = (c.miss_distance_m / 1000) * 0.2;
@@ -111,15 +108,15 @@ function BullseyePlot({ conjunctions, selectedSatId }) {
         const px = cx + r * Math.cos(angle);
         const py = cy + r * Math.sin(angle);
 
-        // Risk color
+        // Classy Risk colors
         let color, glowColor;
         switch (c.risk_level) {
           case 'red':
-            color = '#f87171'; glowColor = 'rgba(248, 113, 113, 0.4)'; break;
+            color = '#e11d48'; glowColor = 'rgba(225, 29, 72, 0.4)'; break; // Rose-600
           case 'yellow':
-            color = '#fbbf24'; glowColor = 'rgba(251, 191, 36, 0.3)'; break;
+            color = '#d97706'; glowColor = 'rgba(217, 119, 6, 0.3)'; break; // Amber-600
           default:
-            color = '#34d399'; glowColor = 'rgba(52, 211, 153, 0.2)';
+            color = '#a1a1aa'; glowColor = 'rgba(161, 161, 170, 0.2)'; // Zinc-400
         }
 
         // Glow
@@ -130,36 +127,36 @@ function BullseyePlot({ conjunctions, selectedSatId }) {
 
         // Marker
         ctx.beginPath();
-        ctx.arc(px, py, 3, 0, Math.PI * 2);
+        ctx.arc(px, py, 2.5, 0, Math.PI * 2);
         ctx.fillStyle = color;
         ctx.fill();
 
         // Label for close ones
         if (c.miss_distance_m < 3000) {
           ctx.fillStyle = color;
-          ctx.font = '8px JetBrains Mono, monospace';
+          ctx.font = '9px DM Mono, monospace';
           ctx.fillText(`${(c.miss_distance_m / 1000).toFixed(1)}km`, px + 6, py - 2);
         }
       });
     }
 
     // ── Legend ──
-    const legendY = H - 30;
+    const legendY = H - 24;
     const legendItems = [
-      { color: '#f87171', label: '< 1km (Critical)' },
-      { color: '#fbbf24', label: '< 5km (Warning)' },
-      { color: '#34d399', label: '> 5km (Safe)' },
+      { color: '#e11d48', label: '< 1km Critical' },
+      { color: '#d97706', label: '< 5km Warning' },
+      { color: '#a1a1aa', label: '> 5km Nominal' },
     ];
-    ctx.font = '9px Inter, sans-serif';
-    let lx = 10;
+    ctx.font = '9px DM Mono, monospace';
+    let lx = 14;
     legendItems.forEach(item => {
       ctx.fillStyle = item.color;
       ctx.beginPath();
       ctx.arc(lx + 4, legendY, 3, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
-      ctx.fillText(item.label, lx + 10, legendY + 3);
-      lx += ctx.measureText(item.label).width + 22;
+      ctx.fillStyle = 'rgba(161, 161, 170, 0.8)';
+      ctx.fillText(item.label, lx + 12, legendY + 3);
+      lx += ctx.measureText(item.label).width + 26;
     });
 
     animRef.current = requestAnimationFrame(draw);
@@ -170,7 +167,7 @@ function BullseyePlot({ conjunctions, selectedSatId }) {
     return () => cancelAnimationFrame(animRef.current);
   }, [draw]);
 
-  return <canvas ref={canvasRef} className="bullseye-canvas" />;
+  return <canvas ref={canvasRef} className="block w-full h-full cursor-default" />;
 }
 
 export default BullseyePlot;
