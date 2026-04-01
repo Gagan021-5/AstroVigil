@@ -91,6 +91,8 @@ class SimulationStepResponse(BaseModel):
     debris_propagated: int
     maneuvers_executed: int
     collisions_detected: List[CollisionEvent]
+    avoidance_burns_scheduled: int = 0
+    blackout_preemptive_count: int = 0
 
 
 # ─── Visualization ────────────────────────────────────────────────────
@@ -112,6 +114,7 @@ class SatelliteSnapshot(BaseModel):
 
 
 class ConjunctionInfo(BaseModel):
+    satellite_id: int
     debris_id: int
     miss_distance_m: float
     tca: float
@@ -126,6 +129,8 @@ class ManeuverBlock(BaseModel):
     cooldown_end: float
     delta_v_mag: float
     conflicts: bool = False
+    blackout_preemptive: bool = False  # True = burn was pre-emptively uplinked from last LOS window
+    preempt_station: Optional[str] = None  # Ground station used for early uplink
 
 
 class VisualizationSnapshot(BaseModel):

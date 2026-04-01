@@ -1,37 +1,56 @@
 """
 Autonomous Constellation Manager - FastAPI Application
-REST API endpoints for constellation management.
+Merged legacy simulation endpoints plus the new modular catalog/orbit routes.
 """
+import asyncio
 import os
-from fastapi import FastAPI, HTTPException
+import sys
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import uvicorn
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from contextlib import asynccontextmanager
 
-from models import (
-    TelemetryPayload, TelemetryResponse,
-    ManeuverScheduleRequest, ManeuverScheduleResponse, BurnResult,
-    SimulationStepRequest, SimulationStepResponse, CollisionEvent,
-    VisualizationSnapshot, SatelliteSnapshot, ConjunctionInfo, ManeuverBlock,
+# Allow direct execution like `python backend/main.py` or IDE "Run File".
+if __package__ in (None, ""):
+    repo_root = Path(__file__).resolve().parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+from backend.api.routes import conjunction, maneuver, propagator, satellites
+from backend.api.routes.propagator import build_snapshot_payload
+from backend.core.collision_risk import compute_and_store_collision_risk
+from backend.data import db
+from backend.legacy_models import (
+    BurnResult,
+    CollisionEvent,
+    ConjunctionInfo,
+    ManeuverBlock,
+    ManeuverScheduleRequest,
+    ManeuverScheduleResponse,
+    SatelliteSnapshot,
+    SimulationStepRequest,
+    SimulationStepResponse,
+    TelemetryPayload,
+    TelemetryResponse,
+    VisualizationSnapshot,
 )
-from simulation import SimulationWorld
+from backend.simulation import SimulationWorld
 
 
-# ─── Global simulation state ─────────────────────────────────────────
 world = SimulationWorld()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize simulation on startup."""
     world.initialize_default()
-    print(f"[ACM] Initialized: {len(world.satellites)} satellites, "
-          f"{len(world.debris)} debris objects")
+    db.init_db()
+    compute_and_store_collision_risk()
     yield
-    print("[ACM] Shutting down.")
 
 
-# ─── App Setup ────────────────────────────────────────────────────────
 app = FastAPI(
     title="Autonomous Constellation Manager",
     description="Centralized brain for satellite fleet management and collision avoidance",
@@ -42,37 +61,26 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# ─── API Endpoints ───────────────────────────────────────────────────
-
 @app.post("/api/telemetry", response_model=TelemetryResponse)
 async def ingest_telemetry(payload: TelemetryPayload):
-    """
-    Asynchronously parse high-frequency ECI state vectors for all objects.
-    Accepts batch telemetry updates with position and velocity data.
-    """
     result = world.ingest_telemetry(payload.epoch, payload.states)
     return TelemetryResponse(**result)
 
 
 @app.post("/api/maneuver/schedule", response_model=ManeuverScheduleResponse)
 async def schedule_maneuvers(request: ManeuverScheduleRequest):
-    """
-    Accept an array of evasion and recovery burns.
-    Validates each burn against fuel, cooldown, line-of-sight, and latency constraints.
-    Delta-v applied instantaneously at the exact burn time.
-    """
     results = world.schedule_maneuvers(request.burns)
-    
-    burn_results = [BurnResult(**r) for r in results]
-    scheduled = sum(1 for r in burn_results if r.accepted)
+
+    burn_results = [BurnResult(**result) for result in results]
+    scheduled = sum(1 for result in burn_results if result.accepted)
     rejected = len(burn_results) - scheduled
-    
+
     return ManeuverScheduleResponse(
         scheduled=scheduled,
         rejected=rejected,
@@ -82,15 +90,9 @@ async def schedule_maneuvers(request: ManeuverScheduleRequest):
 
 @app.post("/api/simulate/step", response_model=SimulationStepResponse)
 async def simulate_step(request: SimulationStepRequest):
-    """
-    Advance the simulation time by `step_seconds`.
-    Integrates physics (RK4 + J2), executes scheduled maneuvers,
-    and returns detected collision events.
-    """
     result = world.step(request.step_seconds)
-    
-    collisions = [CollisionEvent(**c) for c in result["collisions_detected"]]
-    
+    collisions = [CollisionEvent(**collision) for collision in result["collisions_detected"]]
+
     return SimulationStepResponse(
         current_epoch=result["current_epoch"],
         step_seconds=result["step_seconds"],
@@ -98,30 +100,39 @@ async def simulate_step(request: SimulationStepRequest):
         debris_propagated=result["debris_propagated"],
         maneuvers_executed=result["maneuvers_executed"],
         collisions_detected=collisions,
+        avoidance_burns_scheduled=result.get("avoidance_burns_scheduled", 0),
+        blackout_preemptive_count=result.get("blackout_preemptive_count", 0),
     )
 
 
 @app.get("/api/visualization/snapshot", response_model=VisualizationSnapshot)
 async def get_visualization_snapshot():
-    """
-    Return the current state of the constellation.
-    Debris cloud data compressed into flattened array [ID, Lat, Lon, Alt].
-    """
     snap = world.get_snapshot()
-    
     return VisualizationSnapshot(
         epoch=snap["epoch"],
-        satellites=[SatelliteSnapshot(**s) for s in snap["satellites"]],
+        satellites=[SatelliteSnapshot(**satellite) for satellite in snap["satellites"]],
         debris_compressed=snap["debris_compressed"],
         conjunctions=[ConjunctionInfo(**c) for c in snap["conjunctions"]],
-        maneuver_timeline=[ManeuverBlock(**m) for m in snap["maneuver_timeline"]],
+        maneuver_timeline=[
+            ManeuverBlock(
+                satellite_id=m["satellite_id"],
+                burn_start=m["burn_start"],
+                burn_end=m["burn_end"],
+                cooldown_end=m["cooldown_end"],
+                delta_v_mag=m["delta_v_mag"],
+                conflicts=m.get("conflicts", False),
+                blackout_preemptive=m.get("blackout_preemptive", False),
+                preempt_station=m.get("preempt_station"),
+            )
+            for m in snap["maneuver_timeline"]
+        ],
         total_fuel_consumed_kg=snap["total_fuel_consumed_kg"],
         total_collisions_avoided=snap["total_collisions_avoided"],
     )
 
 
 @app.get("/api/health")
-async def health():
+async def api_health():
     return {
         "status": "operational",
         "satellites": len(world.satellites),
@@ -130,7 +141,36 @@ async def health():
     }
 
 
-# ─── Serve static frontend if built ──────────────────────────────────
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "ok",
+        "version": "1.0.0",
+        "catalog_satellites": len(db.get_all_satellites()),
+    }
+
+
+@app.websocket("/ws/telemetry")
+async def telemetry_ws(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            await websocket.send_json(build_snapshot_payload())
+            await asyncio.sleep(1.0)
+    except WebSocketDisconnect:
+        pass
+
+
+app.include_router(satellites.router)
+app.include_router(propagator.router)
+app.include_router(conjunction.router)
+app.include_router(maneuver.router)
+
+
 frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 if os.path.isdir(frontend_dist):
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+
+
+if __name__ == "__main__":
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

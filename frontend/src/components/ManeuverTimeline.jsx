@@ -4,6 +4,7 @@ import './ManeuverTimeline.css';
 /**
  * Maneuver Timeline — Gantt-chart style burn scheduler.
  * Shows burn starts, burn ends, 600s cooldown blocks, and conflict flags.
+ * Blackout-preemptive burns are rendered in VIOLET with a 📡 PRE-EMPT badge.
  */
 function ManeuverTimeline({ timeline, epoch, satellites }) {
   const canvasRef = useRef(null);
@@ -171,10 +172,20 @@ function ManeuverTimeline({ timeline, epoch, satellites }) {
 
         // Burn block
         const burnW = Math.max(3, x2 - x1);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'; // White burns
+        const isPreempt = !!m.blackout_preemptive;
+        // Normal burns: white. Blackout-preemptive burns: violet (#8b5cf6).
+        const burnFill = isPreempt ? 'rgba(139, 92, 246, 0.85)' : 'rgba(255, 255, 255, 0.8)';
+        ctx.fillStyle = burnFill;
         ctx.beginPath();
         ctx.roundRect(x1, y + 2, burnW, rowH - 4, 2);
         ctx.fill();
+
+        // PRE-EMPT badge on violet burns
+        if (isPreempt && burnW > 20) {
+          ctx.fillStyle = '#000';
+          ctx.font = '7px DM Mono, monospace';
+          ctx.fillText('📡', x1 + 2, y + rowH / 2 + 2);
+        }
 
         // Cooldown block (hatched)
         const coolW = Math.max(0, x3 - x2);
@@ -225,8 +236,9 @@ function ManeuverTimeline({ timeline, epoch, satellites }) {
     ctx.font = '9px Inter, sans-serif';
     const legendParts = [
       { color: 'rgba(255, 255, 255, 0.8)', label: 'Burn' },
-      { color: 'rgba(217, 119, 6, 0.3)', label: 'Cooldown (600s)' },
-      { color: '#e11d48', label: '▲ Conflict' },
+      { color: 'rgba(139, 92, 246, 0.85)', label: '📡 Pre-empt (Blackout)' },
+      { color: 'rgba(217, 119, 6, 0.3)',   label: 'Cooldown (600s)' },
+      { color: '#e11d48',                  label: '▲ Conflict' },
     ];
     let lx = padL;
     legendParts.forEach(p => {

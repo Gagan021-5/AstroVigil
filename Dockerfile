@@ -32,7 +32,7 @@ FROM base AS frontend-build
 
 COPY frontend/package.json frontend/package-lock.json* /app/frontend/
 WORKDIR /app/frontend
-RUN npm install --production=false
+RUN npm ci
 
 COPY frontend/ /app/frontend/
 RUN npm run build
@@ -58,5 +58,5 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8000/api/health || exit 1
 
 # Start FastAPI server on 0.0.0.0:8000
-WORKDIR /app/backend
-CMD ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+WORKDIR /app
+CMD ["python3", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

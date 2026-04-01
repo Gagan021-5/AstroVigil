@@ -1,7 +1,18 @@
 """
 Autonomous Constellation Manager - Physical Constants & Configuration
 """
-import numpy as np
+import os
+
+
+def _int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
 
 # --- Earth Parameters ---
 MU_EARTH = 3.986004418e14       # Earth gravitational parameter (m^3/s^2)
@@ -24,22 +35,29 @@ RISK_RED_M = 1_000.0            # Red risk threshold (meters)
 RISK_YELLOW_M = 5_000.0         # Yellow risk threshold (meters)
 
 # --- Simulation Defaults ---
-DEFAULT_NUM_SATELLITES = 50
-DEFAULT_NUM_DEBRIS = 10_000
+DEFAULT_NUM_SATELLITES = _int_env("ACM_DEFAULT_NUM_SATELLITES", 50)
+DEFAULT_NUM_DEBRIS = _int_env("ACM_DEFAULT_NUM_DEBRIS", 10_000)
 DEFAULT_STEP_SECONDS = 60.0
 
 # --- Ground Stations (lat_deg, lon_deg, min_elevation_deg) ---
 GROUND_STATIONS = [
-    {"name": "Goldstone",    "lat": 35.4267,  "lon": -116.8900, "min_elev": 5.0},
-    {"name": "Canberra",     "lat": -35.4014, "lon": 148.9817,  "min_elev": 5.0},
-    {"name": "Madrid",       "lat": 40.4314,  "lon": -4.2481,   "min_elev": 5.0},
-    {"name": "Svalbard",     "lat": 78.2307,  "lon": 15.3897,   "min_elev": 5.0},
-    {"name": "Singapore",    "lat": 1.3521,   "lon": 103.8198,  "min_elev": 5.0},
-    {"name": "McMurdo",      "lat": -77.8419, "lon": 166.6863,  "min_elev": 5.0},
-    {"name": "Bangalore",    "lat": 12.9716,  "lon": 77.5946,   "min_elev": 5.0},
-    {"name": "Kourou",       "lat": 5.2369,   "lon": -52.7684,  "min_elev": 5.0},
+    {"name": "Goldstone", "lat": 35.4267, "lon": -116.8900, "min_elev": 5.0},
+    {"name": "Canberra", "lat": -35.4014, "lon": 148.9817, "min_elev": 5.0},
+    {"name": "Madrid", "lat": 40.4314, "lon": -4.2481, "min_elev": 5.0},
+    {"name": "Svalbard", "lat": 78.2307, "lon": 15.3897, "min_elev": 5.0},
+    {"name": "Singapore", "lat": 1.3521, "lon": 103.8198, "min_elev": 5.0},
+    {"name": "McMurdo", "lat": -77.8419, "lon": 166.6863, "min_elev": 5.0},
+    {"name": "Bangalore", "lat": 12.9716, "lon": 77.5946, "min_elev": 5.0},
+    {"name": "Kourou", "lat": 5.2369, "lon": -52.7684, "min_elev": 5.0},
 ]
 
 # --- Orbital Altitude Ranges (m) for initialization ---
-LEO_MIN_ALT = 400_000.0        # 400 km
-LEO_MAX_ALT = 1_200_000.0      # 1200 km
+LEO_MIN_ALT = 400_000.0         # 400 km
+LEO_MAX_ALT = 1_200_000.0       # 1200 km
+
+# --- Predictive Multi-Threat Avoidance ---
+LOOKAHEAD_DURATION_S = 5_400.0  # 90-minute forward look-ahead window
+LOOKAHEAD_SAMPLE_S = 60.0       # Sampling interval for look-ahead path (seconds)
+MAX_RECURSION_DEPTH = 5         # Maximum recursive delta-v refinement passes
+EVASION_DV_BASE = 0.5           # Base delta-v step for evasion candidate (m/s)
+LOS_SEARCH_STEP_S = 30.0        # Step size for LOS window search (seconds)

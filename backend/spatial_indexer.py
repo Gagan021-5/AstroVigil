@@ -4,7 +4,8 @@ KD-Tree based collision detection and conjunction analysis.
 """
 import numpy as np
 from scipy.spatial import cKDTree
-from config import COLLISION_THRESHOLD_M, RISK_RED_M, RISK_YELLOW_M
+
+from .config import COLLISION_THRESHOLD_M, RISK_RED_M, RISK_YELLOW_M
 
 
 def classify_risk(distance_m: float) -> str:
@@ -125,6 +126,7 @@ class SpatialIndexer:
             bearing = self._compute_bearing(rel_pos, sat_vel)
             
             conjunctions.append({
+                "satellite_id": sat_id,
                 "debris_id": obj_id,
                 "miss_distance_m": round(float(dist), 2),
                 "tca": round(float(epoch_s + tca), 2),
@@ -176,3 +178,47 @@ class SpatialIndexer:
         
         angle = np.degrees(np.arctan2(y_proj, x_proj)) % 360
         return angle
+
+    def query_path_safety(
+        self,
+        path_states: list,
+        threshold_m: float = COLLISION_THRESHOLD_M,
+    ) -> tuple:
+        """
+        Check a sequence of future satellite states against the current KD-Tree
+        index.  Used by the Look-Ahead Tree to verify that a proposed evasion
+        trajectory remains collision-free over the next 90 minutes.
+
+        Args:
+            path_states: List of (6,) numpy arrays [x,y,z,vx,vy,vz] sampled
+                         along the proposed future trajectory.
+            threshold_m: Minimum safe separation distance (meters).
+
+        Returns:
+            (is_safe: bool, threat_step: int, min_dist_m: float)
+            is_safe    – True if no step violated the threshold.
+            threat_step – Index of the first violated step, or -1.
+            min_dist_m  – Closest approach distance found on the path.
+        """
+        if self.tree is None or len(path_states) == 0:
+            return True, -1, float("inf")
+
+        min_dist = float("inf")
+        for step_idx, state in enumerate(path_states):
+            pos = np.asarray(state[:3])
+            # query_ball_point returns indices within threshold
+            indices = self.tree.query_ball_point(pos, threshold_m)
+            if indices:
+                # Find the closest among flagged objects
+                for idx in indices:
+                    d = float(np.linalg.norm(pos - self.positions[idx]))
+                    if d < min_dist:
+                        min_dist = d
+                return False, step_idx, min_dist
+            # Even if no collision, track global minimum separation
+            _, nn_dist = self.tree.query(pos, k=1)
+            if float(nn_dist) < min_dist:
+                min_dist = float(nn_dist)
+
+        return True, -1, min_dist
+

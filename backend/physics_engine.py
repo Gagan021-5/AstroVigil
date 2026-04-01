@@ -3,7 +3,8 @@ Autonomous Constellation Manager - Orbital Mechanics Engine
 RK4 integrator with J2 perturbation for ECI state propagation.
 """
 import numpy as np
-from config import MU_EARTH, R_EARTH, J2, OMEGA_EARTH
+
+from .config import MU_EARTH, R_EARTH, J2, OMEGA_EARTH
 
 
 def j2_acceleration(pos: np.ndarray) -> np.ndarray:

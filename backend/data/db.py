@@ -1,0 +1,107 @@
+import json
+import os
+
+from ..models.satellite import Satellite
+
+def load_sample_satellites():
+    # Use realistic LEO TLEs
+    data = [
+        {
+            "id": "SAT-001-ISS",
+            "name": "ISS (ZARYA)",
+            "tle": {
+                "line1": "1 25544U 98067A   23001.00000000  .00016717  00000-0  30283-3 0  9997",
+                "line2": "2 25544  51.6429 270.3643 0005703 144.1368 283.4357 15.49841804375924"
+            },
+            "mass_kg": 420000.0,
+            "cross_section_m2": 1000.0,
+            "fuel_kg": 5000.0
+        },
+        {
+            "id": "SAT-002-HUBBLE",
+            "name": "HST",
+            "tle": {
+                "line1": "1 20580U 90037B   23001.00000000  .00001004  00000-0  44865-4 0  9993",
+                "line2": "2 20580  28.4695 197.6083 0002824 163.6338 231.8159 15.06173874413970"
+            },
+            "mass_kg": 11000.0,
+            "cross_section_m2": 50.0,
+            "fuel_kg": 0.0
+        },
+        {
+            "id": "SAT-003-STARLINK",
+            "name": "STARLINK-1007",
+            "tle": {
+                "line1": "1 44713U 19074A   23001.00000000  .00009623  00000-0  68991-4 0  9994",
+                "line2": "2 44713  53.0537  43.2504 0001399 101.9961 258.1251 15.06414902179927"
+            },
+            "mass_kg": 260.0,
+            "cross_section_m2": 8.0,
+            "fuel_kg": 10.0
+        },
+        {
+            "id": "SAT-004-IRIDIUM",
+            "name": "IRIDIUM 113",
+            "tle": {
+                "line1": "1 42530U 17003F   23001.00000000  .00000052  00000-0 -59616-5 0  9995",
+                "line2": "2 42530  86.3934 162.1382 0002061  81.1894 278.9669 14.34217128312061"
+            },
+            "mass_kg": 860.0,
+            "cross_section_m2": 15.0,
+            "fuel_kg": 150.0
+        },
+        {
+            "id": "SAT-005-AQUA",
+            "name": "AQUA",
+            "tle": {
+                "line1": "1 27424U 02022A   23001.00000000  .00000097  00000-0  21683-4 0  9999",
+                "line2": "2 27424  98.2439 125.0436 0001744  75.5901 324.4988 14.57112048098634"
+            },
+            "mass_kg": 2934.0,
+            "cross_section_m2": 25.0,
+            "fuel_kg": 50.0
+        },
+        {
+            "id": "SAT-006-DEBRIS",
+            "name": "COSMOS 1408 DEB",
+            "tle": {
+                "line1": "1 49845U 82092BY  23001.00000000  .00192537  00000-0  39327-3 0  9999",
+                "line2": "2 49845  82.5539 238.2570 0015507 296.8623  63.1555 15.34407335 63654"
+            },
+            "mass_kg": 20.0,
+            "cross_section_m2": 1.0,
+            "fuel_kg": 0.0
+        }
+    ]
+    
+    sats = [Satellite(**d) for d in data]
+    return sats
+
+def get_db_path():
+    override = os.getenv("ACM_SATELLITE_DB_PATH")
+    if override:
+        return override
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_dir, "data", "satellites.json")
+
+def init_db():
+    db_path = get_db_path()
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    
+    if not os.path.exists(db_path):
+        sats = load_sample_satellites()
+        with open(db_path, "w") as f:
+            f.write(json.dumps([s.model_dump() for s in sats], indent=2))
+
+def get_all_satellites() -> list[Satellite]:
+    db_path = get_db_path()
+    if not os.path.exists(db_path):
+        init_db()
+    with open(db_path, "r") as f:
+        data = json.load(f)
+    return [Satellite(**d) for d in data]
+
+def save_satellites(sats: list[Satellite]):
+    db_path = get_db_path()
+    with open(db_path, "w") as f:
+        f.write(json.dumps([s.model_dump() for s in sats], indent=2))

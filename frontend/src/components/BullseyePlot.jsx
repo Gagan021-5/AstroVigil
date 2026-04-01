@@ -51,9 +51,11 @@ function BullseyePlot({ conjunctions, selectedSatId }) {
       ctx.fill();
 
       // Label
-      ctx.fillStyle = 'rgba(161, 161, 170, 0.6)'; // zinc-400
-      ctx.font = '9px DM Mono, monospace';
-      ctx.fillText(ring.label, cx + r + 4, cy - 4);
+      if (W > 250) {
+        ctx.fillStyle = 'rgba(161, 161, 170, 0.6)'; // zinc-400
+        ctx.font = '9px DM Mono, monospace';
+        ctx.fillText(ring.label, cx + r + 4, cy - 4);
+      }
     });
 
     // ── Cross-hairs ──
@@ -63,16 +65,18 @@ function BullseyePlot({ conjunctions, selectedSatId }) {
     ctx.beginPath(); ctx.moveTo(cx - maxR, cy); ctx.lineTo(cx + maxR, cy); ctx.stroke();
 
     // ── Compass labels ──
-    ctx.fillStyle = 'rgba(161, 161, 170, 0.5)';
-    ctx.font = '10px DM Mono, monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('0°', cx, cy - maxR - 8);
-    ctx.fillText('180°', cx, cy + maxR + 16);
-    ctx.textAlign = 'left';
-    ctx.fillText('90°', cx + maxR + 8, cy + 4);
-    ctx.textAlign = 'right';
-    ctx.fillText('270°', cx - maxR - 8, cy + 4);
-    ctx.textAlign = 'left';
+    if (W > 250) {
+      ctx.fillStyle = 'rgba(161, 161, 170, 0.5)';
+      ctx.font = '10px DM Mono, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('0°', cx, cy - maxR - 8);
+      ctx.fillText('180°', cx, cy + maxR + 16);
+      ctx.textAlign = 'left';
+      ctx.fillText('90°', cx + maxR + 8, cy + 4);
+      ctx.textAlign = 'right';
+      ctx.fillText('270°', cx - maxR - 8, cy + 4);
+      ctx.textAlign = 'left';
+    }
 
     // ── Center marker (selected satellite) ──
     ctx.beginPath();
@@ -132,7 +136,7 @@ function BullseyePlot({ conjunctions, selectedSatId }) {
         ctx.fill();
 
         // Label for close ones
-        if (c.miss_distance_m < 3000) {
+        if (c.miss_distance_m < 3000 && W > 250) {
           ctx.fillStyle = color;
           ctx.font = '9px DM Mono, monospace';
           ctx.fillText(`${(c.miss_distance_m / 1000).toFixed(1)}km`, px + 6, py - 2);
@@ -141,23 +145,25 @@ function BullseyePlot({ conjunctions, selectedSatId }) {
     }
 
     // ── Legend ──
-    const legendY = H - 24;
-    const legendItems = [
-      { color: '#e11d48', label: '< 1km Critical' },
-      { color: '#d97706', label: '< 5km Warning' },
-      { color: '#a1a1aa', label: '> 5km Nominal' },
-    ];
-    ctx.font = '9px DM Mono, monospace';
-    let lx = 14;
-    legendItems.forEach(item => {
-      ctx.fillStyle = item.color;
-      ctx.beginPath();
-      ctx.arc(lx + 4, legendY, 3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = 'rgba(161, 161, 170, 0.8)';
-      ctx.fillText(item.label, lx + 12, legendY + 3);
-      lx += ctx.measureText(item.label).width + 26;
-    });
+    if (W > 350) {
+      const legendY = H - 24;
+      const legendItems = [
+        { color: '#e11d48', label: '< 1km Critical' },
+        { color: '#d97706', label: '< 5km Warning' },
+        { color: '#a1a1aa', label: '> 5km Nominal' },
+      ];
+      ctx.font = '9px DM Mono, monospace';
+      let lx = 14;
+      legendItems.forEach(item => {
+        ctx.fillStyle = item.color;
+        ctx.beginPath();
+        ctx.arc(lx + 4, legendY, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(161, 161, 170, 0.8)';
+        ctx.fillText(item.label, lx + 12, legendY + 3);
+        lx += ctx.measureText(item.label).width + 26;
+      });
+    }
 
     animRef.current = requestAnimationFrame(draw);
   }, [conjunctions, selectedSatId]);

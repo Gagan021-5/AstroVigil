@@ -148,16 +148,19 @@ function GroundTrackMap({ satellites, debrisCompressed, epoch, selectedSatId, on
     }
 
     // ── Axis labels ──
-    ctx.fillStyle = 'rgba(161, 161, 170, 0.4)';
-    ctx.font = '9px DM Mono, monospace';
-    for (let lon = -150; lon <= 150; lon += 60) {
-      const [lx] = latLonToXY(0, lon, W, H);
-      ctx.fillText(`${lon}°`, lx + 2, H - 3);
-    }
-    for (let lat = -60; lat <= 60; lat += 30) {
-      if (lat === 0) continue;
-      const [, ly] = latLonToXY(lat, 0, W, H);
-      ctx.fillText(`${lat}°`, 3, ly - 2);
+    if (W > 350) {
+      ctx.fillStyle = 'rgba(161, 161, 170, 0.4)';
+      ctx.font = '9px DM Mono, monospace';
+      const lonStep = W > 600 ? 30 : 60;
+      for (let lon = -150; lon <= 150; lon += lonStep) {
+        const [lx] = latLonToXY(0, lon, W, H);
+        ctx.fillText(`${lon}°`, lx + 2, H - 3);
+      }
+      for (let lat = -60; lat <= 60; lat += 30) {
+        if (lat === 0) continue;
+        const [, ly] = latLonToXY(lat, 0, W, H);
+        ctx.fillText(`${lat}°`, 3, ly - 2);
+      }
     }
 
     animRef.current = requestAnimationFrame(draw);
