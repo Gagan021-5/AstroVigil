@@ -133,6 +133,42 @@ class ManeuverBlock(BaseModel):
     preempt_station: Optional[str] = None  # Ground station used for early uplink
 
 
+class KesslerDensityBin(BaseModel):
+    altitude_min_km: float
+    altitude_max_km: float
+    threat_count: int
+    density_zscore: float
+
+
+class SatelliteKtiScore(BaseModel):
+    satellite_id: int
+    altitude_km: float
+    altitude_bin_km: float
+    local_debris_count: int
+    density_zscore: float
+    distance_to_peak_km: float
+    kti_score: float
+    risk_band: RiskLevel
+
+
+class KesslerAnalyticsSnapshot(BaseModel):
+    mean_density: float = 0.0
+    std_density: float = 0.0
+    densest_bin_altitude_km: Optional[float] = None
+    densest_bin_count: int = 0
+    density_bins: List[KesslerDensityBin] = Field(default_factory=list)
+    satellite_scores: List[SatelliteKtiScore] = Field(default_factory=list)
+
+
+class CopilotSitrepResponse(BaseModel):
+    provider: str
+    model: str
+    available: bool = True
+    generated_at_epoch: float
+    sitrep: str
+    input_summary_json: str
+
+
 class VisualizationSnapshot(BaseModel):
     epoch: float
     satellites: List[SatelliteSnapshot]
@@ -141,6 +177,7 @@ class VisualizationSnapshot(BaseModel):
         description="Flattened [ID, Lat, Lon, Alt, ID, Lat, Lon, Alt, ...]")
     conjunctions: List[ConjunctionInfo] = Field(default_factory=list)
     maneuver_timeline: List[ManeuverBlock] = Field(default_factory=list)
+    kessler_analytics: KesslerAnalyticsSnapshot = Field(default_factory=KesslerAnalyticsSnapshot)
     total_fuel_consumed_kg: float = 0.0
     total_collisions_avoided: int = 0
     queued_maneuvers_count: int = 0

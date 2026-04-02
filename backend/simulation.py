@@ -22,7 +22,8 @@ from .config import (
     ENABLE_BULLSEYE_DEMO, BULLSEYE_DEMO_SAT_ID,
 )
 from .physics_engine import (
-    propagate, propagate_batch, eci_to_geodetic, generate_trail
+    propagate, propagate_batch, eci_to_geodetic, generate_trail,
+    calculate_kessler_threat_index,
 )
 from .fuel_model import (
     validate_burn, apply_burn, has_line_of_sight,
@@ -640,15 +641,8 @@ class SimulationWorld:
             "blackout_preemptive_count": blackout_preemptive_count_ref[0],
         }
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Visualization Snapshot
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def get_snapshot(self) -> dict:
-        """Build a visualization snapshot of current world state."""
-        if not self._initialized:
-            self.initialize_default()
-
+    def _build_index_from_current_state(self) -> None:
+        """Rebuild the KD-tree index from the current world state."""
         all_positions = []
         all_ids = []
         all_velocities = []
@@ -668,6 +662,127 @@ class SimulationWorld:
             np.array(all_ids) if all_ids else np.empty(0),
             np.array(all_velocities) if all_velocities else np.empty((0, 3)),
         )
+
+    def _current_collision_events(self) -> list:
+        """Detect collision-threshold events at the current epoch."""
+        sat_positions = np.array([sat["state"][:3] for sat in self.satellites.values()])
+        sat_ids = np.array([sat["id"] for sat in self.satellites.values()])
+        if sat_positions.size == 0:
+            return []
+        return self.indexer.detect_collisions(
+            sat_positions,
+            sat_ids,
+            COLLISION_THRESHOLD_M,
+        )
+
+    def _compute_kessler_analytics(self) -> dict:
+        """Compute orbital-density bins and per-satellite KTI scores."""
+        analytics = calculate_kessler_threat_index(
+            satellite_states={sat_id: sat["state"] for sat_id, sat in self.satellites.items()},
+            debris_states=[deb["state"] for deb in self.debris.values()],
+        )
+        densest_altitude_m = analytics.pop("densest_bin_altitude_m", None)
+        analytics["densest_bin_altitude_km"] = (
+            round(float(densest_altitude_m) / 1000.0, 2)
+            if densest_altitude_m is not None else None
+        )
+        return analytics
+
+    def _collect_blackout_risks(self, conjunctions: Optional[list] = None) -> list:
+        """Flag conjunctions whose TCA appears to occur during a comms blackout."""
+        conjunctions = conjunctions if conjunctions is not None else []
+        grouped: Dict[int, dict] = {}
+        for conjunction in conjunctions:
+            sat_id = conjunction["satellite_id"]
+            current = grouped.get(sat_id)
+            if current is None or conjunction["miss_distance_m"] < current["miss_distance_m"]:
+                grouped[sat_id] = conjunction
+
+        blackout_risks = []
+        for sat_id, conjunction in grouped.items():
+            sat = self.satellites.get(sat_id)
+            if sat is None:
+                continue
+
+            event_epoch = max(self.epoch, float(conjunction.get("tca", self.epoch)))
+            dt_to_event = max(0.0, event_epoch - self.epoch)
+            future_state = propagate(sat["state"], dt_to_event, dt=10.0)
+            station_name = get_visible_station(future_state[:3], event_epoch)
+            if station_name is None:
+                blackout_risks.append({
+                    "satellite_id": sat_id,
+                    "event_epoch": round(event_epoch, 2),
+                    "miss_distance_m": round(float(conjunction["miss_distance_m"]), 2),
+                    "risk_level": conjunction["risk_level"],
+                    "reason": "No ground station line-of-sight at conjunction time",
+                })
+
+        blackout_risks.sort(key=lambda item: item["miss_distance_m"])
+        return blackout_risks
+
+    def build_copilot_state(self) -> dict:
+        """Compress the current world state into a lightweight operator summary."""
+        snapshot = self.get_snapshot()
+        collisions = self._current_collision_events()
+        conjunctions = sorted(
+            snapshot["conjunctions"],
+            key=lambda conjunction: conjunction["miss_distance_m"],
+        )
+        blackout_risks = self._collect_blackout_risks(conjunctions)
+        kessler_analytics = snapshot["kessler_analytics"]
+
+        low_fuel = sorted(
+            [
+                {
+                    "satellite_id": sat["id"],
+                    "fuel_remaining_kg": round(float(sat["fuel_remaining_kg"]), 2),
+                    "kti_score": next(
+                        (
+                            score["kti_score"]
+                            for score in kessler_analytics["satellite_scores"]
+                            if score["satellite_id"] == sat["id"]
+                        ),
+                        0.0,
+                    ),
+                }
+                for sat in snapshot["satellites"]
+            ],
+            key=lambda sat: sat["fuel_remaining_kg"],
+        )[:5]
+
+        queued_blackout_uploads = [
+            {
+                "satellite_id": maneuver["satellite_id"],
+                "burn_time": round(float(maneuver["burn_time"]), 2),
+                "preempt_station": maneuver.get("preempt_station"),
+            }
+            for maneuver in self.maneuver_queue
+            if maneuver.get("blackout_preemptive")
+        ][:5]
+
+        return {
+            "epoch": round(float(snapshot["epoch"]), 2),
+            "active_collisions": collisions[:5],
+            "closest_conjunctions": conjunctions[:5],
+            "fuel_levels": low_fuel,
+            "upcoming_blackouts": blackout_risks[:5],
+            "queued_blackout_uploads": queued_blackout_uploads,
+            "kti_scores": sorted(
+                kessler_analytics["satellite_scores"],
+                key=lambda score: score["kti_score"],
+                reverse=True,
+            )[:8],
+        }
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Visualization Snapshot
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def get_snapshot(self) -> dict:
+        """Build a visualization snapshot of current world state."""
+        if not self._initialized:
+            self.initialize_default()
+        self._build_index_from_current_state()
 
         satellites_out = []
         for sat in self.satellites.values():
@@ -709,6 +824,8 @@ class SimulationWorld:
                 sat["id"], epoch_s=self.epoch
             )
             conjunctions.extend(conjs[:10])
+
+        kessler_analytics = self._compute_kessler_analytics()
 
         closest_object_distance_m: Optional[float] = None
         if self.indexer.positions is not None and self.indexer.object_ids is not None:
@@ -754,6 +871,7 @@ class SimulationWorld:
             "debris_compressed":     debris_compressed,
             "conjunctions":          conjunctions,
             "maneuver_timeline":     timeline,
+            "kessler_analytics":     kessler_analytics,
             "total_fuel_consumed_kg": round(total_fuel, 2),
             "total_collisions_avoided": self.collisions_avoided,
             "queued_maneuvers_count": len(self.maneuver_queue),

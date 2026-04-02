@@ -9,6 +9,9 @@ services:
     environment:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - ACM_COPILOT_MODEL=${ACM_COPILOT_MODEL:-gemini-2.5-pro}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]

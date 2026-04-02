@@ -39,3 +39,9 @@ export async function scheduleManeuvers(burns) {
   if (!res.ok) throw new Error(`Maneuver schedule failed: ${res.status}`);
   return res.json();
 }
+
+export async function fetchCopilotSitrep() {
+  const res = await fetch(`${API_BASE}/copilot/sitrep`);
+  if (!res.ok) throw new Error(`Copilot SitRep failed: ${res.status}`);
+  return res.json();
+}

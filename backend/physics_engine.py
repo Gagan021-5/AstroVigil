@@ -3,8 +3,16 @@ Autonomous Constellation Manager - Orbital Mechanics Engine
 RK4 integrator with J2 perturbation for ECI state propagation.
 """
 import numpy as np
+import pandas as pd
 
-from .config import MU_EARTH, R_EARTH, J2, OMEGA_EARTH
+from .config import (
+    MU_EARTH,
+    R_EARTH,
+    J2,
+    OMEGA_EARTH,
+    KTI_ALTITUDE_BIN_M,
+    KTI_CLUSTER_INFLUENCE_M,
+)
 
 
 def j2_acceleration(pos: np.ndarray) -> np.ndarray:
@@ -184,3 +192,188 @@ def generate_trail(state: np.ndarray, epoch_s: float,
         trail.append([round(lat, 4), round(lon, 4)])
     
     return trail
+
+
+def orbital_altitude_m(position_eci: np.ndarray) -> float:
+    """Return the altitude above mean Earth radius for an ECI position vector."""
+    return float(np.linalg.norm(position_eci) - R_EARTH)
+
+
+def analyze_orbital_density(
+    debris_states: list,
+    bin_size_m: float = KTI_ALTITUDE_BIN_M,
+) -> dict:
+    """
+    Analyze the debris field in fixed altitude shells using Pandas groupby bins.
+
+    Returns:
+        {
+            "mean_density": float,
+            "std_density": float,
+            "densest_bin_altitude_m": float | None,
+            "densest_bin_count": int,
+            "density_bins": [...]
+        }
+    """
+    if not debris_states:
+        return {
+            "mean_density": 0.0,
+            "std_density": 0.0,
+            "densest_bin_altitude_m": None,
+            "densest_bin_count": 0,
+            "density_bins": [],
+        }
+
+    debris_altitudes_m = np.array(
+        [orbital_altitude_m(np.asarray(state[:3])) for state in debris_states],
+        dtype=np.float64,
+    )
+
+    density_df = pd.DataFrame({"altitude_m": debris_altitudes_m})
+    density_df["bin_start_m"] = (
+        np.floor(density_df["altitude_m"] / bin_size_m) * bin_size_m
+    )
+
+    grouped = (
+        density_df.groupby("bin_start_m")
+        .size()
+        .rename("threat_count")
+        .reset_index()
+        .sort_values("bin_start_m")
+        .reset_index(drop=True)
+    )
+    grouped["bin_center_m"] = grouped["bin_start_m"] + (bin_size_m / 2.0)
+
+    mean_density = float(grouped["threat_count"].mean()) if not grouped.empty else 0.0
+    std_density = (
+        float(grouped["threat_count"].std(ddof=0))
+        if len(grouped) > 1 else 0.0
+    )
+    if std_density < 1e-9:
+        grouped["density_zscore"] = 0.0
+    else:
+        grouped["density_zscore"] = (
+            (grouped["threat_count"] - mean_density) / std_density
+        )
+
+    densest_row = (
+        grouped.sort_values(["threat_count", "bin_start_m"], ascending=[False, True])
+        .iloc[0]
+    )
+
+    density_bins = [
+        {
+            "altitude_min_km": round(float(row.bin_start_m) / 1000.0, 2),
+            "altitude_max_km": round(float(row.bin_start_m + bin_size_m) / 1000.0, 2),
+            "threat_count": int(row.threat_count),
+            "density_zscore": round(float(row.density_zscore), 3),
+        }
+        for row in grouped.itertuples(index=False)
+    ]
+
+    return {
+        "mean_density": round(mean_density, 3),
+        "std_density": round(std_density, 3),
+        "densest_bin_altitude_m": float(densest_row.bin_center_m),
+        "densest_bin_count": int(densest_row.threat_count),
+        "density_bins": density_bins,
+        "_grouped_df": grouped,
+        "_bin_size_m": bin_size_m,
+    }
+
+
+def calculate_kessler_threat_index(
+    satellite_states: dict,
+    debris_states: list,
+    bin_size_m: float = KTI_ALTITUDE_BIN_M,
+) -> dict:
+    """
+    Compute Kessler Threat Index scores for all satellites.
+
+    The proprietary score blends:
+      * local shell density relative to the peak shell
+      * weighted proximity to the top three densest debris shells
+      * z-score excess of the local shell density
+    """
+    density_summary = analyze_orbital_density(debris_states, bin_size_m=bin_size_m)
+    grouped = density_summary.pop("_grouped_df", None)
+    density_summary.pop("_bin_size_m", None)
+
+    if grouped is None or grouped.empty:
+        return {
+            **density_summary,
+            "satellite_scores": [],
+        }
+
+    max_density = float(grouped["threat_count"].max()) or 1.0
+    mean_density = float(density_summary["mean_density"])
+    std_density = float(density_summary["std_density"])
+    densest_altitude_m = density_summary["densest_bin_altitude_m"]
+    grouped_lookup = grouped.set_index("bin_start_m")
+
+    top_clusters = (
+        grouped.sort_values("threat_count", ascending=False)
+        .head(min(3, len(grouped)))
+        .copy()
+    )
+    cluster_weight_sum = float(top_clusters["threat_count"].sum()) or 1.0
+
+    satellite_scores = []
+    for sat_id, sat_state in satellite_states.items():
+        sat_altitude_m = orbital_altitude_m(np.asarray(sat_state[:3]))
+        sat_bin_start_m = float(np.floor(sat_altitude_m / bin_size_m) * bin_size_m)
+
+        if sat_bin_start_m in grouped_lookup.index:
+            local_count = float(grouped_lookup.at[sat_bin_start_m, "threat_count"])
+            local_z = float(grouped_lookup.at[sat_bin_start_m, "density_zscore"])
+        else:
+            local_count = 0.0
+            local_z = 0.0 if std_density < 1e-9 else -mean_density / std_density
+
+        local_density_component = np.clip(local_count / max_density, 0.0, 1.0)
+
+        cluster_proximity_component = 0.0
+        for row in top_clusters.itertuples(index=False):
+            distance_m = abs(sat_altitude_m - float(row.bin_center_m))
+            proximity = max(
+                0.0,
+                1.0 - min(distance_m, KTI_CLUSTER_INFLUENCE_M) / KTI_CLUSTER_INFLUENCE_M,
+            )
+            weight = float(row.threat_count) / cluster_weight_sum
+            cluster_proximity_component += weight * proximity
+
+        density_excess_component = 0.0
+        if std_density >= 1e-9:
+            density_excess_component = float(np.clip((local_z + 2.0) / 4.0, 0.0, 1.0))
+
+        kti_score = 100.0 * np.clip(
+            (0.5 * local_density_component)
+            + (0.35 * cluster_proximity_component)
+            + (0.15 * density_excess_component),
+            0.0,
+            1.0,
+        )
+
+        if kti_score > 80.0:
+            risk_band = "red"
+        elif kti_score >= 50.0:
+            risk_band = "yellow"
+        else:
+            risk_band = "green"
+
+        satellite_scores.append({
+            "satellite_id": int(sat_id),
+            "altitude_km": round(sat_altitude_m / 1000.0, 2),
+            "altitude_bin_km": round((sat_bin_start_m + bin_size_m / 2.0) / 1000.0, 2),
+            "local_debris_count": int(local_count),
+            "density_zscore": round(local_z, 3),
+            "distance_to_peak_km": round(
+                abs(sat_altitude_m - float(densest_altitude_m or 0.0)) / 1000.0, 2
+            ),
+            "kti_score": round(float(kti_score), 1),
+            "risk_band": risk_band,
+        })
+
+    satellite_scores.sort(key=lambda score: score["satellite_id"])
+    density_summary["satellite_scores"] = satellite_scores
+    return density_summary

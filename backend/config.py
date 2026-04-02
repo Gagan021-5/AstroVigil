@@ -21,6 +21,14 @@ def _bool_env(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _str_env(name: str, default: str) -> str:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    value = value.strip()
+    return value or default
+
+
 # --- Earth Parameters ---
 MU_EARTH = 3.986004418e14       # Earth gravitational parameter (m^3/s^2)
 R_EARTH = 6_371_000.0           # Earth mean radius (m)
@@ -47,6 +55,9 @@ DEFAULT_NUM_DEBRIS = _int_env("ACM_DEFAULT_NUM_DEBRIS", 10_000)
 DEFAULT_STEP_SECONDS = 60.0
 ENABLE_BULLSEYE_DEMO = _bool_env("ACM_ENABLE_BULLSEYE_DEMO", True)
 BULLSEYE_DEMO_SAT_ID = _int_env("ACM_BULLSEYE_DEMO_SAT_ID", 0)
+KTI_ALTITUDE_BIN_M = 10_000.0
+KTI_CLUSTER_INFLUENCE_M = 200_000.0
+COPILOT_MODEL = _str_env("ACM_COPILOT_MODEL", "gemini-2.5-pro")
 
 # --- Ground Stations (lat_deg, lon_deg, min_elevation_deg) ---
 GROUND_STATIONS = [

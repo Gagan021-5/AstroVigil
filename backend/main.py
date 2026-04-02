@@ -3,7 +3,6 @@ Autonomous Constellation Manager - FastAPI Application
 Merged legacy simulation endpoints plus the new modular catalog/orbit routes.
 """
 import asyncio
-import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -11,6 +10,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 # Allow direct execution like `python backend/main.py` or IDE "Run File".
@@ -21,15 +21,20 @@ if __package__ in (None, ""):
 
 from backend.api.routes import conjunction, maneuver, propagator, satellites
 from backend.api.routes.propagator import build_snapshot_payload
+from backend.copilot import FDOCopilot
 from backend.core.collision_risk import compute_and_store_collision_risk
 from backend.data import db
 from backend.legacy_models import (
     BurnResult,
     CollisionEvent,
+    CopilotSitrepResponse,
     ConjunctionInfo,
+    KesslerAnalyticsSnapshot,
+    KesslerDensityBin,
     ManeuverBlock,
     ManeuverScheduleRequest,
     ManeuverScheduleResponse,
+    SatelliteKtiScore,
     SatelliteSnapshot,
     SimulationStepRequest,
     SimulationStepResponse,
@@ -41,6 +46,7 @@ from backend.simulation import SimulationWorld
 
 
 world = SimulationWorld()
+copilot = FDOCopilot()
 
 
 @asynccontextmanager
@@ -126,6 +132,20 @@ async def get_visualization_snapshot():
             )
             for m in snap["maneuver_timeline"]
         ],
+        kessler_analytics=KesslerAnalyticsSnapshot(
+            mean_density=snap["kessler_analytics"].get("mean_density", 0.0),
+            std_density=snap["kessler_analytics"].get("std_density", 0.0),
+            densest_bin_altitude_km=snap["kessler_analytics"].get("densest_bin_altitude_km"),
+            densest_bin_count=snap["kessler_analytics"].get("densest_bin_count", 0),
+            density_bins=[
+                KesslerDensityBin(**bin_row)
+                for bin_row in snap["kessler_analytics"].get("density_bins", [])
+            ],
+            satellite_scores=[
+                SatelliteKtiScore(**score)
+                for score in snap["kessler_analytics"].get("satellite_scores", [])
+            ],
+        ),
         total_fuel_consumed_kg=snap["total_fuel_consumed_kg"],
         total_collisions_avoided=snap["total_collisions_avoided"],
         queued_maneuvers_count=snap.get("queued_maneuvers_count", 0),
@@ -133,6 +153,20 @@ async def get_visualization_snapshot():
         executed_preemptive_maneuvers_count=snap.get("executed_preemptive_maneuvers_count", 0),
         closest_object_distance_m=snap.get("closest_object_distance_m"),
         collision_trigger_distance_m=snap.get("collision_trigger_distance_m", 100.0),
+    )
+
+
+@app.get("/api/copilot/sitrep", response_model=CopilotSitrepResponse)
+async def get_copilot_sitrep():
+    state_payload = world.build_copilot_state()
+    result = await asyncio.to_thread(copilot.generate_sitrep, state_payload)
+    return CopilotSitrepResponse(
+        provider=result["provider"],
+        model=result["model"],
+        available=result.get("available", True),
+        generated_at_epoch=state_payload["epoch"],
+        sitrep=result["sitrep"],
+        input_summary_json=result["input_summary_json"],
     )
 
 
@@ -172,9 +206,31 @@ app.include_router(conjunction.router)
 app.include_router(maneuver.router)
 
 
-frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
-if os.path.isdir(frontend_dist):
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+frontend_index = frontend_dist / "index.html"
+if frontend_dist.is_dir() and frontend_index.is_file():
+    frontend_root = frontend_dist.resolve()
+    assets_dir = frontend_dist / "assets"
+
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="frontend-assets")
+
+    @app.get("/", include_in_schema=False)
+    async def serve_frontend_index():
+        return FileResponse(frontend_index)
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend_app(full_path: str):
+        candidate = (frontend_dist / full_path).resolve()
+        try:
+            candidate.relative_to(frontend_root)
+        except ValueError:
+            return FileResponse(frontend_index)
+
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+
+        return FileResponse(frontend_index)
 
 
 if __name__ == "__main__":

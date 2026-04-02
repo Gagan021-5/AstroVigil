@@ -59,14 +59,27 @@ def test_legacy_snapshot_and_simulation_step(client: TestClient):
 def test_bullseye_demo_seeded_into_snapshot(client: TestClient):
     snapshot = client.get("/api/visualization/snapshot")
     assert snapshot.status_code == 200
+    snapshot_body = snapshot.json()
     conjunctions = [
-        conj for conj in snapshot.json()["conjunctions"]
+        conj for conj in snapshot_body["conjunctions"]
         if conj["satellite_id"] == 0
     ]
 
     assert len(conjunctions) >= 3
     assert min(conj["miss_distance_m"] for conj in conjunctions) < 1_000.0
     assert max(conj["miss_distance_m"] for conj in conjunctions) < 5_000.0
+    assert snapshot_body["kessler_analytics"]["satellite_scores"]
+    assert snapshot_body["kessler_analytics"]["density_bins"]
+
+
+def test_copilot_sitrep_endpoint_returns_text(client: TestClient):
+    response = client.get("/api/copilot/sitrep")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["model"] == "gemini-2.5-pro"
+    assert isinstance(payload["sitrep"], str)
+    assert len(payload["sitrep"]) > 20
+    assert "input_summary_json" in payload
 
 
 def test_catalog_routes(client: TestClient):
