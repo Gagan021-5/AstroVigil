@@ -39,6 +39,8 @@ This project implements:
 - 🌐 **O(N log N) collision detection** — SciPy cKDTree across 50 satellites × 10,000 debris objects
 - 🔭 **90-minute Look-Ahead Tree** — recursive delta-v refinement to ensure secondary threats on the evasion path are also cleared
 - 📡 **Blackout Zone Anticipation** — detects upcoming coverage gaps and pre-emptively uploads burns via the last available ground station, with 10-second signal latency accounting
+- 🛰️ **Kessler Threat Index (KTI)** — 10km orbital-density shell analysis with per-satellite crowding scores and risk bands
+- 🤖 **FDO Copilot** — Gemini 2.5 Pro powered 3-sentence SitRep generation with local fallback when no API key is configured
 - 🎛️ **Live Mission-Control Dashboard** — 1-second polling, 60 FPS canvas rendering, zero dropped frames
 
 ---
@@ -98,7 +100,9 @@ python dev.py --full
 
 | Interface | URL |
 |---|---|
-| 🎛️ Live Dashboard | http://localhost:5173 |
+| 🎛️ Mission UI | http://localhost:5173/dashboard |
+| 🛠️ Flight Ops | http://localhost:5173/flight-ops |
+| 🤖 Intel / Copilot | http://localhost:5173/intel |
 | 📖 Interactive API Docs | http://localhost:8000/docs |
 | ❤️ Health Check | http://localhost:8000/api/health |
 
@@ -116,6 +120,12 @@ docker compose up --build
 
 Access the dashboard at **http://localhost:8000** (frontend is served as a pre-built static bundle).
 
+Primary routes:
+
+- `http://localhost:8000/dashboard` — mission overview
+- `http://localhost:8000/flight-ops` — telemetry + maneuver timeline
+- `http://localhost:8000/intel` — Kessler analytics + FDO Copilot
+
 ---
 
 ### Option C — Manual (two terminals)
@@ -130,6 +140,30 @@ cd frontend
 npm install
 npm run dev
 ```
+
+---
+
+### Gemini Setup
+
+To enable real Gemini-generated SitReps instead of the safe local fallback, set either:
+
+```bash
+GEMINI_API_KEY=your_key_here
+```
+
+or
+
+```bash
+GOOGLE_API_KEY=your_key_here
+```
+
+Optional model override:
+
+```bash
+ACM_COPILOT_MODEL=gemini-2.5-pro
+```
+
+When using Docker, these variables are passed through by `docker-compose.yml`.
 
 ---
 
@@ -243,7 +277,51 @@ Pre-emptive burns are flagged `blackout_preemptive: true` and rendered in **viol
 
 ---
 
+### 6. Kessler Threat Index (KTI)
+
+AstroVigil now analyzes the debris field dynamically using **10km altitude bins**:
+
+- groups debris into orbital shells with NumPy/Pandas
+- computes **mean density** and **standard deviation**
+- identifies the densest altitude clusters
+- assigns each satellite a proprietary **0-100 KTI score** based on local shell density and proximity to the most crowded regions
+
+Operators can read the result as:
+
+- 🟢 **Green** — KTI < 50
+- 🟡 **Yellow** — KTI 50–80
+- 🔴 **Red** — KTI > 80
+
+The KTI feed is surfaced in the Intel page and included in the live visualization snapshot.
+
+---
+
+### 7. FDO Copilot (Gemini 2.5 Pro)
+
+AstroVigil includes a lightweight AI copilot for operator-facing situational reporting.
+
+When `GET /api/copilot/sitrep` is called, the backend compresses live mission state into a compact JSON payload including:
+
+- active collisions
+- closest conjunctions
+- fuel posture
+- upcoming blackout risks
+- queued blackout uploads
+- highest KTI satellites
+
+That payload is sent to **`gemini-2.5-pro`** with the AstroVigil system prompt so the operator receives a concise, plain-English **3-sentence SitRep**. If no Gemini API key is configured, AstroVigil falls back to a local summary so the panel still remains functional in demos.
+
+---
+
 ## 🎛️ Dashboard Panels
+
+### 🧭 Routed Mission UI
+
+The UI is now split into focused routes so it stays readable across different viewport sizes:
+
+- `/dashboard` — Ground Track + Bullseye + mission summary
+- `/flight-ops` — Telemetry + Maneuver Timeline
+- `/intel` — Kessler Analytics + FDO Copilot
 
 ### 🌍 Ground Track Map
 Real-time Mercator projection rendered in HTML5 Canvas at 60 FPS:
@@ -274,6 +352,20 @@ Operational burn schedule visualised in time:
 - 🟧 **Amber hatched** windows = 600-second thermal cooldown
 - 🔺 **Red triangle** = scheduling conflict detected
 - Vertical NOW marker with current simulation epoch
+
+### 🛰️ Kessler Analytics
+Orbital crowding intelligence shown on the Intel page:
+- Active satellite KTI score with Green / Yellow / Red risk banding
+- Mean shell density and density sigma
+- Densest altitude shell readout
+- Top debris-density bars across 10km altitude bins
+
+### 🤖 FDO Copilot
+Operator guidance panel shown on the Intel page:
+- `Generate SitRep` button wired to Gemini 2.5 Pro
+- Plain-English 3-sentence strategic summary
+- Fallback mode indicator when no Gemini API key is configured
+- Uses live collision, fuel, blackout, and KTI context
 
 ---
 
@@ -327,8 +419,26 @@ Full constellation state snapshot (called every 1 second by the dashboard).
       "blackout_preemptive": true, "preempt_station": "Svalbard"
     }
   ],
+  "kessler_analytics": {
+    "mean_density": 125.0,
+    "std_density": 11.58,
+    "densest_bin_altitude_km": 795.0
+  },
   "total_fuel_consumed_kg": 1.23,
   "total_collisions_avoided": 4
+}
+```
+
+### GET `/api/copilot/sitrep`
+Generate a concise 3-sentence operator summary using Gemini 2.5 Pro or the local fallback summarizer.
+
+```json
+{
+  "provider": "google-genai",
+  "model": "gemini-2.5-pro",
+  "available": true,
+  "generated_at_epoch": 3600.0,
+  "sitrep": "Fuel posture is stable across the fleet. SAT-0 owns the nearest conjunction and should be watched as blackout risk rises. KTI remains highest in the densest 795 km shell."
 }
 ```
 
@@ -365,6 +475,7 @@ astrovigil/
 │
 ├── backend/
 │   ├── main.py                 # FastAPI app — 6 REST endpoints
+│   ├── copilot.py              # Gemini 2.5 Pro / fallback SitRep service
 │   ├── config.py               # All physical constants & ground stations
 │   ├── simulation.py           # World state manager + Look-Ahead Tree + Blackout pre-emption
 │   ├── physics_engine.py       # RK4 integrator, J2 perturbation, ECI↔geodetic
@@ -382,14 +493,20 @@ astrovigil/
 └── frontend/
     ├── vite.config.js          # Proxy /api → :8000, port 5173
     ├── src/
-    │   ├── App.jsx             # Shell, header, dual polling loops
+    │   ├── App.jsx             # Routed shell, header, live polling loops
     │   ├── api.js              # Fetch wrappers
     │   └── components/
-    │       ├── Dashboard.jsx           # Responsive 2×2 grid, panel chrome
+    │       ├── Dashboard.jsx           # Mission overview route
+    │       ├── OperationsPage.jsx      # Flight Ops route
+    │       ├── IntelligencePage.jsx    # Intel route
+    │       ├── PanelFrame.jsx          # Shared panel chrome
+    │       ├── MissionSummary.jsx      # Overview mission cards
     │       ├── GroundTrackMap.jsx      # Mercator canvas, terminator, click-to-select
     │       ├── BullseyePlot.jsx        # Polar canvas, adaptive labels
     │       ├── TelemetryPanel.jsx      # Fuel bars, histogram canvas
     │       ├── ManeuverTimeline.jsx    # Gantt canvas, 📡 preempt rendering
+    │       ├── KesslerAnalytics.jsx    # KTI and orbital density view
+    │       ├── CopilotPanel.jsx        # Gemini SitRep panel
     │       └── useResponsiveCanvas.js  # ResizeObserver DPR-aware canvas hook
     └── package.json
 ```
@@ -421,6 +538,9 @@ All tunable constants live in `backend/config.py`:
 | `MAX_RECURSION_DEPTH` | 5 | Max delta-v refinement passes |
 | `EVASION_DV_BASE` | 0.5 m/s | Base radial evasion impulse |
 | `LOS_SEARCH_STEP_S` | 30 s | Backward LOS window search step |
+| `KTI_ALTITUDE_BIN_M` | 10 000 m | Orbital-density shell height for KTI analytics |
+| `KTI_CLUSTER_INFLUENCE_M` | 200 000 m | Distance weighting scale for densest-shell influence |
+| `ACM_COPILOT_MODEL` | `gemini-2.5-pro` | Gemini model override for FDO Copilot |
 
 ---
 
