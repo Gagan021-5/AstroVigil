@@ -143,3 +143,8 @@ class VisualizationSnapshot(BaseModel):
     maneuver_timeline: List[ManeuverBlock] = Field(default_factory=list)
     total_fuel_consumed_kg: float = 0.0
     total_collisions_avoided: int = 0
+    queued_maneuvers_count: int = 0
+    queued_preemptive_maneuvers_count: int = 0
+    executed_preemptive_maneuvers_count: int = 0
+    closest_object_distance_m: Optional[float] = None
+    collision_trigger_distance_m: float = 100.0

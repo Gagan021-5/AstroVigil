@@ -4,7 +4,16 @@ import './TelemetryPanel.css';
 /**
  * Telemetry Heatmaps — Fuel gauges per satellite and efficiency chart.
  */
-function TelemetryPanel({ satellites, totalFuelConsumed, totalCollisionsAvoided }) {
+function TelemetryPanel({
+  satellites,
+  totalFuelConsumed,
+  totalCollisionsAvoided,
+  queuedManeuversCount,
+  queuedPreemptiveManeuversCount,
+  executedPreemptiveManeuversCount,
+  closestObjectDistanceM,
+  collisionTriggerDistanceM,
+}) {
   const canvasRef = useRef(null);
   const animRef = useRef(null);
 
@@ -105,15 +114,27 @@ function TelemetryPanel({ satellites, totalFuelConsumed, totalCollisionsAvoided 
     ctx.fillText('Fleet Efficiency', cx, cy + 12);
 
     // Stats boxes
+    const closestObjectLabel = closestObjectDistanceM == null
+      ? 'N/A'
+      : closestObjectDistanceM >= 1000
+        ? `${(closestObjectDistanceM / 1000).toFixed(1)} km`
+        : `${closestObjectDistanceM.toFixed(0)} m`;
+
+    const triggerLabel = collisionTriggerDistanceM >= 1000
+      ? `${(collisionTriggerDistanceM / 1000).toFixed(1)} km`
+      : `${collisionTriggerDistanceM.toFixed(0)} m`;
+
     const stats = [
       { label: 'Total Fuel Used', value: `${totalFuelConsumed.toFixed(1)} kg`,
         color: '#d97706', icon: '⛽' },
       { label: 'Collisions Avoided', value: `${totalCollisionsAvoided}`,
         color: '#10b981', icon: '🛡️' },
-      { label: 'Active Satellites', value: `${satellites.length}`,
-        color: '#ffffff', icon: '🛰' },
-      { label: 'Avg Fuel Remaining', value: `${(satellites.reduce((a, s) => a + s.fuel_remaining_kg, 0) / satellites.length).toFixed(1)} kg`,
-        color: '#71717a', icon: '📊' },
+      { label: 'Queued Burns', value: `${queuedManeuversCount}`,
+        color: '#ffffff', icon: '⏳' },
+      { label: 'Pre-emptive Uploads', value: `${executedPreemptiveManeuversCount} done / ${queuedPreemptiveManeuversCount} queued`,
+        color: '#8b5cf6', icon: '📡' },
+      { label: 'Closest Tracked Object', value: `${closestObjectLabel} (trigger ${triggerLabel})`,
+        color: closestObjectDistanceM != null && closestObjectDistanceM <= collisionTriggerDistanceM ? '#e11d48' : '#71717a', icon: '📏' },
     ];
 
     const boxH = 36;
@@ -145,7 +166,7 @@ function TelemetryPanel({ satellites, totalFuelConsumed, totalCollisionsAvoided 
     });
 
     // Fleet fuel histogram at bottom
-    const histY = cy + 24 + 4 * (boxH + boxGap) + 12;
+    const histY = cy + 24 + stats.length * (boxH + boxGap) + 12;
     const histH = Math.max(30, H - histY - 10);
     if (histH > 20) {
       ctx.fillStyle = 'rgba(161, 161, 170, 0.5)';
@@ -183,7 +204,16 @@ function TelemetryPanel({ satellites, totalFuelConsumed, totalCollisionsAvoided 
     }
 
     animRef.current = requestAnimationFrame(draw);
-  }, [satellites, totalFuelConsumed, totalCollisionsAvoided]);
+  }, [
+    satellites,
+    totalFuelConsumed,
+    totalCollisionsAvoided,
+    queuedManeuversCount,
+    queuedPreemptiveManeuversCount,
+    executedPreemptiveManeuversCount,
+    closestObjectDistanceM,
+    collisionTriggerDistanceM,
+  ]);
 
   useEffect(() => {
     animRef.current = requestAnimationFrame(draw);

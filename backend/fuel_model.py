@@ -98,7 +98,9 @@ def get_visible_station(sat_pos_eci: np.ndarray, epoch_s: float) -> Optional[str
 
 def find_next_los_window(
     sat_state: np.ndarray,
+    state_epoch: float,
     start_epoch: float,
+    earliest_epoch: Optional[float] = None,
     search_duration_s: float = LOOKAHEAD_DURATION_S,
     step_s: float = LOS_SEARCH_STEP_S
 ) -> Tuple[Optional[float], Optional[float], Optional[str]]:
@@ -113,7 +115,10 @@ def find_next_los_window(
 
     Args:
         sat_state: Current satellite ECI state [x,y,z,vx,vy,vz]
+        state_epoch: Epoch corresponding to sat_state
         start_epoch: The epoch of the impending event (collision time)
+        earliest_epoch: Do not search earlier than this epoch. Defaults to
+            max(state_epoch, start_epoch - search_duration_s).
         search_duration_s: How far back in time to search
         step_s: Backward step size in seconds
 
@@ -121,16 +126,29 @@ def find_next_los_window(
         (uplink_epoch, window_epoch, station_name) or (None, None, None) if no window found.
         uplink_epoch already accounts for SIGNAL_LATENCY_S so the command arrives in time.
     """
-    n_steps = int(search_duration_s / step_s)
+    latest_epoch = start_epoch - SIGNAL_LATENCY_S
+    if latest_epoch < 0:
+        return None, None, None
 
-    for i in range(1, n_steps + 1):
-        dt_back = i * step_s
-        check_epoch = start_epoch - SIGNAL_LATENCY_S - dt_back
-        if check_epoch < 0:
-            break
-        # Propagate backward from current state
-        back_state = propagate(sat_state, -dt_back, dt=step_s)
-        station = get_visible_station(back_state[:3], check_epoch)
+    earliest_allowed = max(
+        state_epoch,
+        start_epoch - search_duration_s,
+        0.0,
+    )
+    if earliest_epoch is not None:
+        earliest_allowed = max(earliest_allowed, earliest_epoch)
+
+    if latest_epoch < earliest_allowed:
+        return None, None, None
+
+    span = latest_epoch - earliest_allowed
+    n_steps = int(np.ceil(span / step_s)) if span > 0 else 0
+
+    for i in range(n_steps + 1):
+        check_epoch = max(earliest_allowed, latest_epoch - i * step_s)
+        dt_from_state = check_epoch - state_epoch
+        check_state = propagate(sat_state, dt_from_state, dt=min(step_s, 10.0))
+        station = get_visible_station(check_state[:3], check_epoch)
         if station is not None:
             # Found the most-recent LOS window before the blackout + latency margin
             return check_epoch, check_epoch, station

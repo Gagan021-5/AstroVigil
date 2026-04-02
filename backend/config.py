@@ -14,6 +14,13 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 # --- Earth Parameters ---
 MU_EARTH = 3.986004418e14       # Earth gravitational parameter (m^3/s^2)
 R_EARTH = 6_371_000.0           # Earth mean radius (m)
@@ -38,6 +45,8 @@ RISK_YELLOW_M = 5_000.0         # Yellow risk threshold (meters)
 DEFAULT_NUM_SATELLITES = _int_env("ACM_DEFAULT_NUM_SATELLITES", 50)
 DEFAULT_NUM_DEBRIS = _int_env("ACM_DEFAULT_NUM_DEBRIS", 10_000)
 DEFAULT_STEP_SECONDS = 60.0
+ENABLE_BULLSEYE_DEMO = _bool_env("ACM_ENABLE_BULLSEYE_DEMO", True)
+BULLSEYE_DEMO_SAT_ID = _int_env("ACM_BULLSEYE_DEMO_SAT_ID", 0)
 
 # --- Ground Stations (lat_deg, lon_deg, min_elevation_deg) ---
 GROUND_STATIONS = [

@@ -5,63 +5,106 @@
 :root {
   --font-ui:   'Syne', system-ui, sans-serif;
   --font-data: 'DM Mono', 'Fira Code', monospace;
+
+  /* Refined palette */
+  --c-bg:        #030508;
+  --c-surface:   rgba(8, 10, 18, 0.85);
+  --c-border:    rgba(255,255,255,0.07);
+  --c-border-hi: rgba(255,255,255,0.18);
+  --c-text-1:    #f0f0f5;
+  --c-text-2:    #8c8ca0;
+  --c-text-3:    #52526a;
+  --c-cyan:      #22d3ee;
+  --c-violet:    #a78bfa;
+  --c-rose:      #fb7185;
+  --c-amber:     #fbbf24;
+  --c-green:     #34d399;
+
+  --header-h: 52px;
+  --gap:      6px;
+  --radius:   10px;
 }
 
-html, body { height: 100%; overflow: hidden; -webkit-font-smoothing: antialiased; }
-#root      { height: 100%; display: flex; flex-direction: column; }
-
-body { font-family: var(--font-ui); }
-
-/* Clean, crisp logo text */
-.logo-text {
-  color: #ffffff;
-  letter-spacing: 0.15em;
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  background: var(--c-bg);
+  color: var(--c-text-1);
+  -webkit-font-smoothing: antialiased;
 }
 
-/* header accent line: very subtle */
-.header-line {
-  position: relative;
-}
-.header-line::after {
-  content: '';
-  position: absolute;
-  bottom: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 35%, rgba(255,255,255,0.08) 65%, transparent 100%);
+#root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-/* panel top-border glow */
-.panel-glow {
-  position: relative;
-}
-.panel-glow::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 12px; right: 12px; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
-  border-radius: 1px;
-  z-index: 1;
-}
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
 
-/* logo orb pulse - subtle white */
+/* ── Logo orb pulse ── */
 @keyframes orb-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.3), 0 0 8px rgba(255,255,255,0.1); }
-  50%       { box-shadow: 0 0 0 4px rgba(255,255,255,0), 0 0 12px rgba(255,255,255,0.25); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34,211,238,0.45), 0 0 6px rgba(34,211,238,0.2); }
+  50%       { box-shadow: 0 0 0 5px rgba(34,211,238,0), 0 0 14px rgba(34,211,238,0.35); }
 }
 .orb { animation: orb-pulse 3s ease-in-out infinite; }
 
-/* sim running bar */
-@keyframes running-bar {
+/* ── Running indicator bar ── */
+@keyframes running-sweep {
   0%   { transform: translateX(-100%); }
-  100% { transform: translateX(500%); }
+  100% { transform: translateX(400%); }
 }
-.sim-running-bar { animation: running-bar 2s linear infinite; }
+.sim-running-bar { animation: running-sweep 1.8s linear infinite; }
 
-/* loading spinner */
+/* ── Spinner ── */
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner { animation: spin 1s linear infinite; }
 
-/* scrollbar */
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+/* ── Scan-line shimmer across entire viewport ── */
+@keyframes scan {
+  0%   { transform: translateY(-100vh); }
+  100% { transform: translateY(100vh); }
+}
+.scanline {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 3px,
+    rgba(0,0,0,0.06) 3px,
+    rgba(0,0,0,0.06) 4px
+  );
+}
+.scanline::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 120px;
+  background: linear-gradient(to bottom, transparent, rgba(34,211,238,0.018), transparent);
+  animation: scan 8s linear infinite;
+}
+
+/* ── Panel accent lines ── */
+.panel-glow::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 16px; right: 16px; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent);
+  z-index: 1;
+}
+
+/* ── Status badge colours ── */
+.badge-cyan   { color: var(--c-cyan);   background: rgba(34,211,238,0.08);  border-color: rgba(34,211,238,0.18); }
+.badge-violet { color: var(--c-violet); background: rgba(167,139,250,0.08); border-color: rgba(167,139,250,0.18); }
+.badge-rose   { color: var(--c-rose);   background: rgba(251,113,133,0.08); border-color: rgba(251,113,133,0.18); }
+.badge-amber  { color: var(--c-amber);  background: rgba(251,191,36,0.08);  border-color: rgba(251,191,36,0.18); }
+.badge-green  { color: var(--c-green);  background: rgba(52,211,153,0.08);  border-color: rgba(52,211,153,0.18); }
+.badge-slate  { color: var(--c-text-3); background: rgba(82,82,106,0.08);   border-color: rgba(82,82,106,0.18); }

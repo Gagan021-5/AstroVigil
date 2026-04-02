@@ -128,6 +128,11 @@ async def get_visualization_snapshot():
         ],
         total_fuel_consumed_kg=snap["total_fuel_consumed_kg"],
         total_collisions_avoided=snap["total_collisions_avoided"],
+        queued_maneuvers_count=snap.get("queued_maneuvers_count", 0),
+        queued_preemptive_maneuvers_count=snap.get("queued_preemptive_maneuvers_count", 0),
+        executed_preemptive_maneuvers_count=snap.get("executed_preemptive_maneuvers_count", 0),
+        closest_object_distance_m=snap.get("closest_object_distance_m"),
+        collision_trigger_distance_m=snap.get("collision_trigger_distance_m", 100.0),
     )
 
 

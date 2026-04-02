@@ -5,39 +5,69 @@ import BullseyePlot from './BullseyePlot';
 import TelemetryPanel from './TelemetryPanel';
 import ManeuverTimeline from './ManeuverTimeline';
 
-/* ── animation variants ── */
-const containerVariants = {
+/* ── Framer variants ── */
+const containerV = {
   hidden: {},
-  show: { transition: { staggerChildren: 0.05 } },
+  show: { transition: { staggerChildren: 0.04 } },
 };
-const panelVariants = {
-  hidden: { opacity: 0, y: 15, scale: 0.99 },
-  show:   { opacity: 1, y: 0, scale: 1, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] } },
+const panelV = {
+  hidden: { opacity: 0, scale: 0.985 },
+  show:   { opacity: 1, scale: 1, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
 };
 
 function Dashboard({ snapshot, selectedSatId, onSelectSat }) {
   if (!snapshot) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-4 text-zinc-500">
-        <div className="spinner w-8 h-8 rounded-full border border-zinc-800 border-t-zinc-400" />
-        <p className="font-['DM_Mono'] text-[11px] tracking-widest uppercase">Initializing constellation…</p>
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 14,
+        color: 'var(--c-text-3)',
+      }}>
+        <div className="spinner" style={{
+          width: 28, height: 28, borderRadius: '50%',
+          border: '1.5px solid rgba(255,255,255,0.08)',
+          borderTopColor: 'rgba(34,211,238,0.5)',
+        }} />
+        <p style={{
+          fontFamily: 'var(--font-data)',
+          fontSize: 10,
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+          color: 'var(--c-text-3)',
+        }}>
+          Initializing constellation…
+        </p>
       </div>
     );
   }
 
   return (
     <motion.div
-      variants={containerVariants}
+      variants={containerV}
       initial="hidden"
       animate="show"
-      className="grid flex-1 gap-4 p-4 md:gap-6 md:p-6 overflow-y-auto lg:overflow-hidden grid-cols-1 lg:grid-cols-[1.6fr_1fr] lg:grid-rows-[1.3fr_1fr]"
+      style={{
+        flex: 1,
+        minHeight: 0,          /* critical — lets flex child shrink */
+        display: 'grid',
+        gridTemplateColumns: '1.65fr 1fr',
+        gridTemplateRows: '1.25fr 1fr',
+        gap: 'var(--gap)',
+        padding: 'var(--gap)',
+        overflow: 'hidden',    /* never grow past viewport */
+      }}
     >
       {/* Ground Track */}
       <Panel
-        className="min-h-[400px] lg:col-start-1 lg:col-end-2 lg:row-start-1 lg:row-end-2"
+        style={{ gridColumn: '1', gridRow: '1' }}
         icon="🌍"
         title="Ground Track"
         badge={`${snapshot.satellites.length} active`}
+        badgeVariant="violet"
       >
         <GroundTrackMap
           satellites={snapshot.satellites}
@@ -50,42 +80,55 @@ function Dashboard({ snapshot, selectedSatId, onSelectSat }) {
 
       {/* Conjunction Bullseye */}
       <Panel
-        className="min-h-[300px] lg:col-start-2 lg:col-end-3 lg:row-start-1 lg:row-end-2"
+        style={{ gridColumn: '2', gridRow: '1' }}
         icon="🎯"
         title="Conjunction Bullseye"
         badge={`SAT-${selectedSatId}`}
+        badgeVariant="cyan"
       >
         <BullseyePlot
           conjunctions={snapshot.conjunctions}
           selectedSatId={selectedSatId}
+          epoch={snapshot.epoch}
         />
       </Panel>
 
       {/* Telemetry */}
       <Panel
-        className="min-h-[300px] lg:col-start-1 lg:col-end-2 lg:row-start-2 lg:row-end-3"
+        style={{ gridColumn: '1', gridRow: '2' }}
         icon="📊"
         title="Telemetry"
         badge={`${snapshot.total_fuel_consumed_kg.toFixed(1)} kg used`}
+        badgeVariant="amber"
       >
         <TelemetryPanel
           satellites={snapshot.satellites}
           totalFuelConsumed={snapshot.total_fuel_consumed_kg}
           totalCollisionsAvoided={snapshot.total_collisions_avoided}
+          queuedManeuversCount={snapshot.queued_maneuvers_count}
+          queuedPreemptiveManeuversCount={snapshot.queued_preemptive_maneuvers_count}
+          executedPreemptiveManeuversCount={snapshot.executed_preemptive_maneuvers_count}
+          closestObjectDistanceM={snapshot.closest_object_distance_m}
+          collisionTriggerDistanceM={snapshot.collision_trigger_distance_m}
         />
       </Panel>
 
       {/* Maneuver Timeline */}
       <Panel
-        className="min-h-[300px] lg:col-start-2 lg:col-end-3 lg:row-start-2 lg:row-end-3"
+        style={{ gridColumn: '2', gridRow: '2' }}
         icon="⏳"
         title="Maneuver Timeline"
         badge={`${snapshot.maneuver_timeline.length} burns`}
+        badgeVariant="rose"
       >
         <ManeuverTimeline
           timeline={snapshot.maneuver_timeline}
           epoch={snapshot.epoch}
           satellites={snapshot.satellites}
+          queuedManeuversCount={snapshot.queued_maneuvers_count}
+          queuedPreemptiveManeuversCount={snapshot.queued_preemptive_maneuvers_count}
+          closestObjectDistanceM={snapshot.closest_object_distance_m}
+          collisionTriggerDistanceM={snapshot.collision_trigger_distance_m}
         />
       </Panel>
     </motion.div>
@@ -93,32 +136,91 @@ function Dashboard({ snapshot, selectedSatId, onSelectSat }) {
 }
 
 /* ─────────────────────────────────────────────
-   Panel — Minimalist & Premium Chrome
+   Panel — premium glassmorphism card
 ───────────────────────────────────────────── */
-function Panel({ children, icon, title, badge, className = '' }) {
+function Panel({ children, icon, title, badge, badgeVariant = 'slate', style = {} }) {
+  const badgeColours = {
+    cyan:   { color: '#67e8f9', bg: 'rgba(34,211,238,0.08)',  border: 'rgba(34,211,238,0.2)' },
+    violet: { color: '#c4b5fd', bg: 'rgba(167,139,250,0.08)', border: 'rgba(167,139,250,0.2)' },
+    rose:   { color: '#fda4af', bg: 'rgba(251,113,133,0.08)', border: 'rgba(251,113,133,0.2)' },
+    amber:  { color: '#fcd34d', bg: 'rgba(251,191,36,0.08)',  border: 'rgba(251,191,36,0.2)' },
+    green:  { color: '#6ee7b7', bg: 'rgba(52,211,153,0.08)',  border: 'rgba(52,211,153,0.2)' },
+    slate:  { color: '#6b7280', bg: 'rgba(107,114,128,0.08)', border: 'rgba(107,114,128,0.18)' },
+  };
+  const bc = badgeColours[badgeVariant] || badgeColours.slate;
+
   return (
     <motion.div
-      variants={panelVariants}
-      className={`relative flex flex-col bg-gradient-to-br from-[#0a0a0d] to-[#040405] border border-white/[0.08] rounded-2xl overflow-hidden shadow-[0_4px_24px_rgba(0,0,0,0.6)] backdrop-blur-3xl transition-all duration-300 hover:border-white/[0.2] hover:shadow-[0_8px_32px_rgba(0,0,0,0.8)] group ${className}`}
+      variants={panelV}
+      className="panel-glow"
+      style={{
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,        /* allow shrink */
+        overflow: 'hidden',
+        borderRadius: 'var(--radius)',
+        background: 'linear-gradient(145deg, rgba(10,11,20,0.97) 0%, rgba(5,6,12,0.99) 100%)',
+        border: '1px solid var(--c-border)',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04)',
+        transition: 'border-color 0.25s, box-shadow 0.25s',
+        ...style,
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.borderColor = 'var(--c-border-hi)';
+        e.currentTarget.style.boxShadow   = '0 8px 32px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.07)';
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = 'var(--c-border)';
+        e.currentTarget.style.boxShadow   = '0 4px 24px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04)';
+      }}
     >
-      {/* Subtle top inner glow */}
-      <div className="absolute top-0 inset-x-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/10 to-transparent z-10 opacity-60 group-hover:opacity-100 transition-opacity duration-300" />
-      {/* Subtle left edge accent on hover */}
-      <div className="absolute left-0 inset-y-0 w-[1.5px] bg-gradient-to-b from-transparent via-cyan-400/20 to-transparent z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-
       {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-white/[0.04] shrink-0 bg-[#000000]/40">
-        <span className="text-[13px] opacity-80 filter drop-shadow-[0_0_6px_rgba(255,255,255,0.2)]">{icon}</span>
-        <h2 className="flex-1 font-['Syne'] text-[13px] font-semibold tracking-[0.15em] text-[#e4e4e7] uppercase">
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '7px 12px',
+        borderBottom: '1px solid var(--c-border)',
+        flexShrink: 0,
+        background: 'rgba(0,0,0,0.35)',
+      }}>
+        <span style={{ fontSize: 12, opacity: 0.85, lineHeight: 1 }}>{icon}</span>
+        <h2 style={{
+          flex: 1,
+          fontFamily: 'var(--font-ui)',
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase',
+          color: 'rgba(240,240,245,0.85)',
+          margin: 0,
+        }}>
           {title}
         </h2>
-        <span className="font-['DM_Mono'] text-[10px] text-zinc-300 bg-white/[0.05] px-2.5 py-1 rounded-md border border-white/[0.08] shadow-inner tracking-wider">
+        {/* Badge */}
+        <span style={{
+          fontFamily: 'var(--font-data)',
+          fontSize: 9.5,
+          color: bc.color,
+          background: bc.bg,
+          border: `1px solid ${bc.border}`,
+          padding: '2px 8px',
+          borderRadius: 100,
+          whiteSpace: 'nowrap',
+          letterSpacing: '0.04em',
+        }}>
           {badge}
         </span>
       </div>
 
-      {/* Body */}
-      <div className="flex-1 relative min-h-0 overflow-hidden bg-black/20">
+      {/* Body — canvas fills this */}
+      <div style={{
+        flex: 1,
+        position: 'relative',
+        minHeight: 0,
+        overflow: 'hidden',
+      }}>
         {children}
       </div>
     </motion.div>

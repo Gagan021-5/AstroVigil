@@ -19,6 +19,7 @@ from .config import (
     LEO_MIN_ALT, LEO_MAX_ALT, COLLISION_THRESHOLD_M,
     LOOKAHEAD_DURATION_S, LOOKAHEAD_SAMPLE_S,
     MAX_RECURSION_DEPTH, EVASION_DV_BASE, SIGNAL_LATENCY_S,
+    ENABLE_BULLSEYE_DEMO, BULLSEYE_DEMO_SAT_ID,
 )
 from .physics_engine import (
     propagate, propagate_batch, eci_to_geodetic, generate_trail
@@ -78,6 +79,9 @@ class SimulationWorld:
                 "state": state,
             }
 
+        if ENABLE_BULLSEYE_DEMO:
+            self._seed_bullseye_demo(BULLSEYE_DEMO_SAT_ID)
+
         self._initialized = True
 
     def _random_circular_orbit(self, alt_m: float, seed_offset: int) -> np.ndarray:
@@ -103,6 +107,79 @@ class SimulationWorld:
         vz = sin_i * vy_pf
 
         return np.array([x, y, z, vx, vy, vz], dtype=np.float64)
+
+    def _rotate_about_axis(
+        self, vector: np.ndarray, axis: np.ndarray, angle_rad: float
+    ) -> np.ndarray:
+        """Rotate a vector around an axis using Rodrigues' rotation formula."""
+        axis_norm = np.linalg.norm(axis)
+        if axis_norm < 1e-12 or abs(angle_rad) < 1e-12:
+            return vector.copy()
+
+        axis_hat = axis / axis_norm
+        cos_theta = np.cos(angle_rad)
+        sin_theta = np.sin(angle_rad)
+        return (
+            vector * cos_theta
+            + np.cross(axis_hat, vector) * sin_theta
+            + axis_hat * np.dot(axis_hat, vector) * (1.0 - cos_theta)
+        )
+
+    def _build_demo_debris_state(
+        self, sat_state: np.ndarray, along_track_m: float, cross_track_m: float
+    ) -> np.ndarray:
+        """
+        Create a nearby debris state around a satellite for the bullseye demo.
+
+        The debris is phase-shifted along the same orbit, then optionally tilted
+        slightly out of plane so the bullseye markers spread around the plot.
+        """
+        pos = sat_state[:3].copy()
+        vel = sat_state[3:6].copy()
+
+        orbit_normal = np.cross(pos, vel)
+        pos_norm = np.linalg.norm(pos)
+        if pos_norm < 1e-12 or np.linalg.norm(orbit_normal) < 1e-12:
+            return sat_state.copy()
+
+        phase_angle = along_track_m / pos_norm
+        demo_pos = self._rotate_about_axis(pos, orbit_normal, phase_angle)
+        demo_vel = self._rotate_about_axis(vel, orbit_normal, phase_angle)
+
+        if abs(cross_track_m) > 0.0:
+            track_axis = demo_vel
+            tilt_angle = cross_track_m / np.linalg.norm(demo_pos)
+            demo_pos = self._rotate_about_axis(demo_pos, track_axis, tilt_angle)
+            demo_vel = self._rotate_about_axis(demo_vel, track_axis, tilt_angle)
+
+        return np.array([*demo_pos, *demo_vel], dtype=np.float64)
+
+    def _seed_bullseye_demo(self, target_sat_id: int) -> None:
+        """
+        Place a deterministic close-approach cluster around a chosen satellite.
+
+        These demo debris objects stay inside the 5 km bullseye gate but remain
+        comfortably outside the 100 m collision trigger.
+        """
+        sat = self.satellites.get(target_sat_id)
+        if sat is None:
+            return
+
+        demo_specs = [
+            {"id": 1000, "along_track_m": 700.0, "cross_track_m": 250.0},
+            {"id": 1001, "along_track_m": -2100.0, "cross_track_m": 900.0},
+            {"id": 1002, "along_track_m": 3600.0, "cross_track_m": -1200.0},
+        ]
+
+        for spec in demo_specs:
+            self.debris[spec["id"]] = {
+                "id": spec["id"],
+                "state": self._build_demo_debris_state(
+                    sat["state"],
+                    spec["along_track_m"],
+                    spec["cross_track_m"],
+                ),
+            }
 
     # ─────────────────────────────────────────────────────────────────────────
     # Telemetry Ingestion
@@ -306,6 +383,7 @@ class SimulationWorld:
         self,
         sat: dict,
         dv_vec: np.ndarray,
+        decision_epoch: float,
         collision_epoch: float,
         avoidance_burns: list,
         blackout_preemptive_count_ref: list,
@@ -325,6 +403,7 @@ class SimulationWorld:
         Args:
             sat:                        Satellite state dict (mutated here)
             dv_vec:                     Verified evasion delta-v vector
+            decision_epoch:             Epoch when this scheduling decision is made
             collision_epoch:            Predicted collision time
             avoidance_burns:            Accumulator list for the step() return value
             blackout_preemptive_count_ref: Single-element list used as a mutable int ref
@@ -333,14 +412,19 @@ class SimulationWorld:
         dv_mag = float(np.linalg.norm(dv_vec))
 
         # Check LOS at collision time
-        collision_state = propagate(sat["state"], collision_epoch - self.epoch, dt=10.0)
+        collision_state = propagate(
+            sat["state"], collision_epoch - decision_epoch, dt=10.0
+        )
         station_at_collision = get_visible_station(collision_state[:3], collision_epoch)
         is_blackout = station_at_collision is None
 
         if is_blackout:
             # Walk backward from collision_epoch to find last LOS window
             uplink_epoch, window_epoch, station_name = find_next_los_window(
-                sat["state"], collision_epoch
+                sat["state"],
+                decision_epoch,
+                collision_epoch,
+                earliest_epoch=decision_epoch,
             )
             if uplink_epoch is None:
                 # No LOS window found in search range — cannot uplink; skip
@@ -351,7 +435,7 @@ class SimulationWorld:
             preempt_station = station_name
             blackout_preemptive_count_ref[0] += 1
         else:
-            burn_epoch = self.epoch + SIGNAL_LATENCY_S
+            burn_epoch = decision_epoch + SIGNAL_LATENCY_S
             preemptive = False
             preempt_station = None
 
@@ -539,7 +623,7 @@ class SimulationWorld:
             collision_epoch = target_epoch + max(tca_offset, SIGNAL_LATENCY_S + 1)
 
             self._schedule_avoidance_burn(
-                sat, verified_dv, collision_epoch,
+                sat, verified_dv, target_epoch, collision_epoch,
                 avoidance_burns, blackout_preemptive_count_ref
             )
 
@@ -564,6 +648,26 @@ class SimulationWorld:
         """Build a visualization snapshot of current world state."""
         if not self._initialized:
             self.initialize_default()
+
+        all_positions = []
+        all_ids = []
+        all_velocities = []
+
+        for deb in self.debris.values():
+            all_positions.append(deb["state"][:3])
+            all_ids.append(deb["id"])
+            all_velocities.append(deb["state"][3:6])
+
+        for sat in self.satellites.values():
+            all_positions.append(sat["state"][:3])
+            all_ids.append(sat["id"])
+            all_velocities.append(sat["state"][3:6])
+
+        self.indexer.build_index(
+            np.array(all_positions) if all_positions else np.empty((0, 3)),
+            np.array(all_ids) if all_ids else np.empty(0),
+            np.array(all_velocities) if all_velocities else np.empty((0, 3)),
+        )
 
         satellites_out = []
         for sat in self.satellites.values():
@@ -606,6 +710,18 @@ class SimulationWorld:
             )
             conjunctions.extend(conjs[:10])
 
+        closest_object_distance_m: Optional[float] = None
+        if self.indexer.positions is not None and self.indexer.object_ids is not None:
+            nearest = []
+            for sat in self.satellites.values():
+                deltas = self.indexer.positions - sat["state"][:3]
+                distances = np.linalg.norm(deltas, axis=1)
+                mask = self.indexer.object_ids != sat["id"]
+                if np.any(mask):
+                    nearest.append(float(np.min(distances[mask])))
+            if nearest:
+                closest_object_distance_m = min(nearest)
+
         # Maneuver timeline (last 200 entries)
         timeline = []
         for mh in self.maneuver_history[-200:]:
@@ -640,4 +756,16 @@ class SimulationWorld:
             "maneuver_timeline":     timeline,
             "total_fuel_consumed_kg": round(total_fuel, 2),
             "total_collisions_avoided": self.collisions_avoided,
+            "queued_maneuvers_count": len(self.maneuver_queue),
+            "queued_preemptive_maneuvers_count": sum(
+                1 for m in self.maneuver_queue if m.get("blackout_preemptive")
+            ),
+            "executed_preemptive_maneuvers_count": sum(
+                1 for m in self.maneuver_history if m.get("blackout_preemptive")
+            ),
+            "closest_object_distance_m": (
+                round(closest_object_distance_m, 2)
+                if closest_object_distance_m is not None else None
+            ),
+            "collision_trigger_distance_m": COLLISION_THRESHOLD_M,
         }

@@ -56,6 +56,19 @@ def test_legacy_snapshot_and_simulation_step(client: TestClient):
     assert step.json()["step_seconds"] == 60
 
 
+def test_bullseye_demo_seeded_into_snapshot(client: TestClient):
+    snapshot = client.get("/api/visualization/snapshot")
+    assert snapshot.status_code == 200
+    conjunctions = [
+        conj for conj in snapshot.json()["conjunctions"]
+        if conj["satellite_id"] == 0
+    ]
+
+    assert len(conjunctions) >= 3
+    assert min(conj["miss_distance_m"] for conj in conjunctions) < 1_000.0
+    assert max(conj["miss_distance_m"] for conj in conjunctions) < 5_000.0
+
+
 def test_catalog_routes(client: TestClient):
     satellites = client.get("/api/satellites")
     assert satellites.status_code == 200

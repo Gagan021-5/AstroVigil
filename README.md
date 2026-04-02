@@ -8,6 +8,10 @@
 
 *A full-stack operational platform that autonomously coordinates a fleet of 50 satellites navigating 10,000+ debris objects using predictive physics, KD-Tree spatial intelligence, and pre-emptive ground-station-aware burn scheduling — rendered live in a professional mission-control dashboard.*
 
+<p align="center">
+  <img src="assets/dashboard.png" alt="AstroVigil Live Dashboard UI" width="100%">
+</p>
+
 ---
 
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
