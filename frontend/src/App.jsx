@@ -1,10 +1,10 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Dashboard from './components/Dashboard';
 import IntelligencePage from './components/IntelligencePage';
 import OperationsPage from './components/OperationsPage';
-import { fetchSnapshot, simulateStep } from './api';
+import { simulateStep } from './api';
 import './App.css';
 
 const ROUTES = [
@@ -38,13 +38,27 @@ function App() {
   const [fps, setFps] = useState(0);
   const frameCount = useRef(0);
   const lastFpsTime = useRef(Date.now());
-  const intervalRef = useRef(null);
+  const simLoopRef = useRef(null);
+  const stepInFlightRef = useRef(false);
+  const telemetrySocketRef = useRef(null);
 
-  useEffect(() => {
-    fetchSnapshot().then(setSnapshot).catch((e) => setError(e.message));
+  const telemetryUrl = useMemo(() => {
+    if (import.meta.env.DEV) {
+      return 'ws://localhost:8000/api/ws/telemetry';
+    }
+
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${protocol}://${window.location.host}/api/ws/telemetry`;
   }, []);
 
   useEffect(() => {
+    let animId;
+    const countFrame = () => {
+      frameCount.current += 1;
+      animId = requestAnimationFrame(countFrame);
+    };
+    animId = requestAnimationFrame(countFrame);
+
     const id = setInterval(() => {
       const now = Date.now();
       const delta = (now - lastFpsTime.current) / 1000;
@@ -52,48 +66,107 @@ function App() {
       frameCount.current = 0;
       lastFpsTime.current = now;
     }, 1000);
-    return () => clearInterval(id);
+
+    return () => {
+      cancelAnimationFrame(animId);
+      clearInterval(id);
+    };
   }, []);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      fetchSnapshot()
-        .then((snap) => {
-          setSnapshot(snap);
-          setError(null);
-          frameCount.current += 1;
-        })
-        .catch((e) => setError(e.message));
-    }, 1000);
-    return () => clearInterval(id);
-  }, []);
+    let isActive = true;
+    let closedByCleanup = false;
+    const ws = new WebSocket(telemetryUrl);
+    telemetrySocketRef.current = ws;
+
+    ws.onopen = () => {
+      if (!isActive) return;
+      setError(null);
+    };
+
+    ws.onmessage = (event) => {
+      if (!isActive) return;
+
+      try {
+        const nextSnapshot = JSON.parse(event.data);
+        setSnapshot(nextSnapshot);
+        setError(null);
+      } catch (e) {
+        setError(`Telemetry parse failed: ${e.message}`);
+      }
+    };
+
+    ws.onerror = () => {
+      if (!isActive) return;
+      setError('Telemetry stream error');
+    };
+
+    ws.onclose = () => {
+      if (!isActive || closedByCleanup) return;
+      setError('Telemetry stream disconnected');
+    };
+
+    return () => {
+      isActive = false;
+      closedByCleanup = true;
+      telemetrySocketRef.current = null;
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
+    };
+  }, [telemetryUrl]);
 
   const runStep = useCallback(async () => {
+    if (stepInFlightRef.current) return;
+
+    stepInFlightRef.current = true;
     try {
       await simulateStep(stepSize);
-      const snap = await fetchSnapshot();
-      setSnapshot(snap);
-      frameCount.current += 1;
       setError(null);
     } catch (e) {
       setError(e.message);
+      setSimRunning(false);
+    } finally {
+      stepInFlightRef.current = false;
     }
   }, [stepSize]);
 
   const toggleSim = useCallback(() => {
-    if (simRunning) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-      setSimRunning(false);
-    } else {
-      setSimRunning(true);
-      intervalRef.current = setInterval(runStep, 100);
+    setSimRunning((running) => !running);
+  }, []);
+
+  useEffect(() => {
+    if (!simRunning) {
+      if (simLoopRef.current) {
+        clearTimeout(simLoopRef.current);
+        simLoopRef.current = null;
+      }
+      return undefined;
     }
-  }, [simRunning, runStep]);
+
+    let cancelled = false;
+
+    const loop = async () => {
+      if (cancelled) return;
+      await runStep();
+      if (cancelled) return;
+      simLoopRef.current = setTimeout(loop, 150);
+    };
+
+    loop();
+
+    return () => {
+      cancelled = true;
+      if (simLoopRef.current) {
+        clearTimeout(simLoopRef.current);
+        simLoopRef.current = null;
+      }
+    };
+  }, [runStep, simRunning]);
 
   useEffect(
     () => () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (simLoopRef.current) clearTimeout(simLoopRef.current);
     },
     []
   );

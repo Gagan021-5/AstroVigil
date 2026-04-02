@@ -135,8 +135,10 @@ def test_catalog_maneuver_routes(client: TestClient):
 
 
 def test_websocket_snapshot_stream(client: TestClient):
-    with client.websocket_connect("/ws/telemetry") as websocket:
+    with client.websocket_connect("/api/ws/telemetry") as websocket:
         payload = websocket.receive_json()
 
-    assert "timestamp" in payload
+    assert "epoch" in payload
     assert "satellites" in payload
+    assert "conjunctions" in payload
+    assert "kessler_analytics" in payload

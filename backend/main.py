@@ -20,7 +20,6 @@ if __package__ in (None, ""):
         sys.path.insert(0, str(repo_root))
 
 from backend.api.routes import conjunction, maneuver, propagator, satellites
-from backend.api.routes.propagator import build_snapshot_payload
 from backend.copilot import FDOCopilot
 from backend.core.collision_risk import compute_and_store_collision_risk
 from backend.data import db
@@ -47,6 +46,66 @@ from backend.simulation import SimulationWorld
 
 world = SimulationWorld()
 copilot = FDOCopilot()
+
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+
+connection_manager = ConnectionManager()
+
+
+def build_visualization_snapshot_response() -> VisualizationSnapshot:
+    snap = world.get_snapshot()
+    return VisualizationSnapshot(
+        epoch=snap["epoch"],
+        satellites=[SatelliteSnapshot(**satellite) for satellite in snap["satellites"]],
+        debris_compressed=snap["debris_compressed"],
+        conjunctions=[ConjunctionInfo(**c) for c in snap["conjunctions"]],
+        maneuver_timeline=[
+            ManeuverBlock(
+                satellite_id=m["satellite_id"],
+                burn_start=m["burn_start"],
+                burn_end=m["burn_end"],
+                cooldown_end=m["cooldown_end"],
+                delta_v_mag=m["delta_v_mag"],
+                conflicts=m.get("conflicts", False),
+                blackout_preemptive=m.get("blackout_preemptive", False),
+                preempt_station=m.get("preempt_station"),
+            )
+            for m in snap["maneuver_timeline"]
+        ],
+        kessler_analytics=KesslerAnalyticsSnapshot(
+            mean_density=snap["kessler_analytics"].get("mean_density", 0.0),
+            std_density=snap["kessler_analytics"].get("std_density", 0.0),
+            densest_bin_altitude_km=snap["kessler_analytics"].get("densest_bin_altitude_km"),
+            densest_bin_count=snap["kessler_analytics"].get("densest_bin_count", 0),
+            density_bins=[
+                KesslerDensityBin(**bin_row)
+                for bin_row in snap["kessler_analytics"].get("density_bins", [])
+            ],
+            satellite_scores=[
+                SatelliteKtiScore(**score)
+                for score in snap["kessler_analytics"].get("satellite_scores", [])
+            ],
+        ),
+        total_fuel_consumed_kg=snap["total_fuel_consumed_kg"],
+        total_collisions_avoided=snap["total_collisions_avoided"],
+        queued_maneuvers_count=snap.get("queued_maneuvers_count", 0),
+        queued_preemptive_maneuvers_count=snap.get("queued_preemptive_maneuvers_count", 0),
+        executed_preemptive_maneuvers_count=snap.get("executed_preemptive_maneuvers_count", 0),
+        closest_object_distance_m=snap.get("closest_object_distance_m"),
+        collision_trigger_distance_m=snap.get("collision_trigger_distance_m", 100.0),
+    )
 
 
 @asynccontextmanager
@@ -113,47 +172,7 @@ async def simulate_step(request: SimulationStepRequest):
 
 @app.get("/api/visualization/snapshot", response_model=VisualizationSnapshot)
 async def get_visualization_snapshot():
-    snap = world.get_snapshot()
-    return VisualizationSnapshot(
-        epoch=snap["epoch"],
-        satellites=[SatelliteSnapshot(**satellite) for satellite in snap["satellites"]],
-        debris_compressed=snap["debris_compressed"],
-        conjunctions=[ConjunctionInfo(**c) for c in snap["conjunctions"]],
-        maneuver_timeline=[
-            ManeuverBlock(
-                satellite_id=m["satellite_id"],
-                burn_start=m["burn_start"],
-                burn_end=m["burn_end"],
-                cooldown_end=m["cooldown_end"],
-                delta_v_mag=m["delta_v_mag"],
-                conflicts=m.get("conflicts", False),
-                blackout_preemptive=m.get("blackout_preemptive", False),
-                preempt_station=m.get("preempt_station"),
-            )
-            for m in snap["maneuver_timeline"]
-        ],
-        kessler_analytics=KesslerAnalyticsSnapshot(
-            mean_density=snap["kessler_analytics"].get("mean_density", 0.0),
-            std_density=snap["kessler_analytics"].get("std_density", 0.0),
-            densest_bin_altitude_km=snap["kessler_analytics"].get("densest_bin_altitude_km"),
-            densest_bin_count=snap["kessler_analytics"].get("densest_bin_count", 0),
-            density_bins=[
-                KesslerDensityBin(**bin_row)
-                for bin_row in snap["kessler_analytics"].get("density_bins", [])
-            ],
-            satellite_scores=[
-                SatelliteKtiScore(**score)
-                for score in snap["kessler_analytics"].get("satellite_scores", [])
-            ],
-        ),
-        total_fuel_consumed_kg=snap["total_fuel_consumed_kg"],
-        total_collisions_avoided=snap["total_collisions_avoided"],
-        queued_maneuvers_count=snap.get("queued_maneuvers_count", 0),
-        queued_preemptive_maneuvers_count=snap.get("queued_preemptive_maneuvers_count", 0),
-        executed_preemptive_maneuvers_count=snap.get("executed_preemptive_maneuvers_count", 0),
-        closest_object_distance_m=snap.get("closest_object_distance_m"),
-        collision_trigger_distance_m=snap.get("collision_trigger_distance_m", 100.0),
-    )
+    return build_visualization_snapshot_response()
 
 
 @app.get("/api/copilot/sitrep", response_model=CopilotSitrepResponse)
@@ -189,15 +208,19 @@ async def health_check():
     }
 
 
+@app.websocket("/api/ws/telemetry")
 @app.websocket("/ws/telemetry")
 async def telemetry_ws(websocket: WebSocket):
-    await websocket.accept()
+    await connection_manager.connect(websocket)
     try:
         while True:
-            await websocket.send_json(build_snapshot_payload())
+            payload = build_visualization_snapshot_response().model_dump(mode="json")
+            await websocket.send_json(payload)
             await asyncio.sleep(1.0)
     except WebSocketDisconnect:
-        pass
+        connection_manager.disconnect(websocket)
+    finally:
+        connection_manager.disconnect(websocket)
 
 
 app.include_router(satellites.router)

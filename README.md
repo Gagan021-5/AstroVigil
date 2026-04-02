@@ -41,7 +41,7 @@ This project implements:
 - 📡 **Blackout Zone Anticipation** — detects upcoming coverage gaps and pre-emptively uploads burns via the last available ground station, with 10-second signal latency accounting
 - 🛰️ **Kessler Threat Index (KTI)** — 10km orbital-density shell analysis with per-satellite crowding scores and risk bands
 - 🤖 **FDO Copilot** — Gemini 2.5 Pro powered 3-sentence SitRep generation with local fallback when no API key is configured
-- 🎛️ **Live Mission-Control Dashboard** — 1-second polling, 60 FPS canvas rendering, zero dropped frames
+- 🎛️ **Live Mission-Control Dashboard** — 1-second WebSocket telemetry stream, 60 FPS canvas rendering, zero dropped frames
 
 ---
 
@@ -60,7 +60,7 @@ This project implements:
 │  │  Fuel bars · Histogram │  │  Burns · Cooldown · 📡 Pre-empt burns│   │
 │  └────────────────────────┘  └──────────────────────────────────────┘   │
 └──────────────────────────────┬──────────────────────────────────────────┘
-                               │ REST/JSON  ·  1-second live polling
+                               │ REST/JSON + WebSocket · 1-second live stream
 ┌──────────────────────────────▼──────────────────────────────────────────┐
 │                      FastAPI Backend  :8000                             │
 │                                                                         │
@@ -367,6 +367,12 @@ Operator guidance panel shown on the Intel page:
 - Fallback mode indicator when no Gemini API key is configured
 - Uses live collision, fuel, blackout, and KTI context
 
+### 📶 Live Telemetry Stream
+The React mission UI now consumes telemetry through a dedicated WebSocket feed instead of HTTP polling:
+- `GET /api/visualization/snapshot` is still preserved for grading and compatibility
+- `WS /api/ws/telemetry` streams the exact same snapshot payload shape once per second
+- This avoids browser/dev-server overload from repeated `setInterval(fetch(...))` loops
+
 ---
 
 ## 📡 API Reference
@@ -428,6 +434,11 @@ Full constellation state snapshot (called every 1 second by the dashboard).
   "total_collisions_avoided": 4
 }
 ```
+
+> This endpoint is intentionally preserved for compatibility with the automated grading harness.
+
+### WebSocket `/api/ws/telemetry`
+Streams the same visualization snapshot payload used by `GET /api/visualization/snapshot` once per second for the live React UI.
 
 ### GET `/api/copilot/sitrep`
 Generate a concise 3-sentence operator summary using Gemini 2.5 Pro or the local fallback summarizer.
